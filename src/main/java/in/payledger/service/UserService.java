@@ -2,6 +2,7 @@ package in.payledger.service;
 
 import in.payledger.dto.CreateUserRequest;
 import in.payledger.dto.UserResponse;
+import in.payledger.entity.Role;
 import in.payledger.entity.User;
 import in.payledger.exception.ResourceAlreadyExistsException;
 import in.payledger.exception.ResourceNotFoundException;
@@ -9,6 +10,7 @@ import in.payledger.repository.UserRepository;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Service
@@ -50,6 +52,10 @@ public class UserService {
 
         user.setName(request.getName());
         user.setEmail(request.getEmail());
+
+        user.setRole(Role.USER);
+        user.setCreatedAt(LocalDateTime.now());
+        user.setUpdatedAt(LocalDateTime.now());
 
         String hashedPassword =
                 passwordEncoder.encode(request.getPassword());
