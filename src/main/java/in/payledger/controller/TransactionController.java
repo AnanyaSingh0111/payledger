@@ -7,11 +7,13 @@ import in.payledger.service.TransactionService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.security.access.prepost.PreAuthorize;
 
 import java.util.List;
 
 @RestController
 @RequestMapping("/api/users/{userId}/transactions")
+@PreAuthorize("#userId == authentication.principal")
 public class TransactionController {
 
     private final TransactionService transactionService;
@@ -26,12 +28,10 @@ public class TransactionController {
     @ResponseStatus(HttpStatus.CREATED)
     public TransactionResponse createTransaction(
             @PathVariable Long userId,
+            @RequestHeader("Idempotency-Key") String idempotencyKey,
             @Valid @RequestBody CreateTransactionRequest request) {
 
-        return transactionService.createTransaction(
-                userId,
-                request
-        );
+        return transactionService.createTransaction(userId, idempotencyKey, request);
     }
 
     @GetMapping("/{transactionId}")

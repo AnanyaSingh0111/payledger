@@ -5,6 +5,7 @@ import in.payledger.dto.TransactionResponse;
 import in.payledger.entity.Account;
 import in.payledger.entity.Transaction;
 import in.payledger.entity.TransactionType;
+import in.payledger.exception.IdempotencyConflictException;
 import in.payledger.exception.InsufficientBalanceException;
 import in.payledger.exception.InvalidTransactionException;
 import in.payledger.exception.ResourceNotFoundException;
@@ -21,6 +22,7 @@ import org.springframework.data.domain.Sort;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 @Service
 public class TransactionService {
@@ -35,120 +37,90 @@ public class TransactionService {
         this.transactionRepository = transactionRepository;
         this.accountRepository = accountRepository;
     }
-
     @Transactional
     public TransactionResponse createTransaction(
             Long userId,
+            String idempotencyKey,
             CreateTransactionRequest request) {
 
-        TransactionType type = request.getType();
+        if (idempotencyKey == null || idempotencyKey.isBlank() || idempotencyKey.length() > 64) {
+            throw new InvalidTransactionException(
+                    "Idempotency-Key must be 1 to 64 characters");
+        }
 
+        // 1. Replay: same key seen before -> return the stored result, move no money
+        Optional<Transaction> existing =
+                transactionRepository.findByUserIdAndIdempotencyKey(userId, idempotencyKey);
+
+        if (existing.isPresent()) {
+            Transaction prior = existing.get();
+            if (!sameRequest(prior, request)) {
+                throw new IdempotencyConflictException(
+                        "Idempotency-Key was already used with a different request");
+            }
+            return toResponse(prior);
+        }
+
+        TransactionType type = request.getType();
         Account sourceAccount = null;
         Account destinationAccount = null;
 
         if (type == TransactionType.INCOME) {
 
-            if (request.getSourceAccountId() != null) {
-                throw new InvalidTransactionException(
-                        "Income cannot have a source account"
-                );
-            }
+            if (request.getSourceAccountId() != null)
+                throw new InvalidTransactionException("Income cannot have a source account");
+            if (request.getDestinationAccountId() == null)
+                throw new InvalidTransactionException("Income requires a destination account");
 
-            if (request.getDestinationAccountId() == null) {
-                throw new InvalidTransactionException(
-                        "Income requires a destination account"
-                );
-            }
-
-            destinationAccount =
-                    getUserAccount(
-                            userId,
-                            request.getDestinationAccountId()
-                    );
-
+            destinationAccount = lockUserAccount(userId, request.getDestinationAccountId());
             destinationAccount.setBalance(
-                    destinationAccount.getBalance()
-                            .add(request.getAmount())
-            );
+                    destinationAccount.getBalance().add(request.getAmount()));
 
         } else if (type == TransactionType.EXPENSE) {
 
-            if (request.getSourceAccountId() == null) {
-                throw new InvalidTransactionException(
-                        "Expense requires a source account"
-                );
-            }
+            if (request.getSourceAccountId() == null)
+                throw new InvalidTransactionException("Expense requires a source account");
+            if (request.getDestinationAccountId() != null)
+                throw new InvalidTransactionException("Expense cannot have a destination account");
 
-            if (request.getDestinationAccountId() != null) {
-                throw new InvalidTransactionException(
-                        "Expense cannot have a destination account"
-                );
-            }
-
-            sourceAccount =
-                    getUserAccount(
-                            userId,
-                            request.getSourceAccountId()
-                    );
-
-            ensureSufficientBalance(
-                    sourceAccount,
-                    request.getAmount()
-            );
-
+            sourceAccount = lockUserAccount(userId, request.getSourceAccountId());
+            ensureSufficientBalance(sourceAccount, request.getAmount());
             sourceAccount.setBalance(
-                    sourceAccount.getBalance()
-                            .subtract(request.getAmount())
-            );
+                    sourceAccount.getBalance().subtract(request.getAmount()));
 
         } else if (type == TransactionType.TRANSFER) {
 
-            if (request.getSourceAccountId() == null
-                    || request.getDestinationAccountId() == null) {
+            Long srcId = request.getSourceAccountId();
+            Long dstId = request.getDestinationAccountId();
 
+            if (srcId == null || dstId == null)
                 throw new InvalidTransactionException(
-                        "Transfer requires both source and destination accounts"
-                );
-            }
-
-            if (request.getSourceAccountId()
-                    .equals(request.getDestinationAccountId())) {
-
+                        "Transfer requires both source and destination accounts");
+            if (srcId.equals(dstId))
                 throw new InvalidTransactionException(
-                        "Source and destination accounts must be different"
-                );
-            }
+                        "Source and destination accounts must be different");
 
-            sourceAccount =
-                    getUserAccount(
-                            userId,
-                            request.getSourceAccountId()
-                    );
+            // Always lock the lower id first. Two opposite transfers (A->B and B->A)
+            // then queue up instead of each holding one lock and waiting on the other.
+            Long firstId = Math.min(srcId, dstId);
+            Long secondId = Math.max(srcId, dstId);
 
-            destinationAccount =
-                    getUserAccount(
-                            userId,
-                            request.getDestinationAccountId()
-                    );
+            Account first = lockUserAccount(userId, firstId);
+            Account second = lockUserAccount(userId, secondId);
 
-            ensureSufficientBalance(
-                    sourceAccount,
-                    request.getAmount()
-            );
+            sourceAccount = srcId.equals(firstId) ? first : second;
+            destinationAccount = srcId.equals(firstId) ? second : first;
 
+            ensureSufficientBalance(sourceAccount, request.getAmount());
             sourceAccount.setBalance(
-                    sourceAccount.getBalance()
-                            .subtract(request.getAmount())
-            );
-
+                    sourceAccount.getBalance().subtract(request.getAmount()));
             destinationAccount.setBalance(
-                    destinationAccount.getBalance()
-                            .add(request.getAmount())
-            );
+                    destinationAccount.getBalance().add(request.getAmount()));
         }
 
         Transaction transaction = new Transaction();
-
+        transaction.setUserId(userId);
+        transaction.setIdempotencyKey(idempotencyKey);
         transaction.setSourceAccount(sourceAccount);
         transaction.setDestinationAccount(destinationAccount);
         transaction.setType(type);
@@ -157,10 +129,26 @@ public class TransactionService {
         transaction.setDescription(request.getDescription());
         transaction.setCreatedAt(LocalDateTime.now());
 
-        Transaction savedTransaction =
-                transactionRepository.save(transaction);
+        // saveAndFlush so a duplicate key fails here, inside the transaction, and rolls
+        // back the balance changes with it
+        return toResponse(transactionRepository.saveAndFlush(transaction));
+    }
 
-        return toResponse(savedTransaction);
+    private Account lockUserAccount(Long userId, Long accountId) {
+        return accountRepository.findByIdForUpdate(accountId)
+                .filter(a -> a.getUser().getId().equals(userId))
+                .orElseThrow(() ->
+                        new ResourceNotFoundException("Account not found for this user"));
+    }
+
+    private boolean sameRequest(Transaction t, CreateTransactionRequest r) {
+        Long src = t.getSourceAccount() != null ? t.getSourceAccount().getId() : null;
+        Long dst = t.getDestinationAccount() != null ? t.getDestinationAccount().getId() : null;
+
+        return t.getType() == r.getType()
+                && t.getAmount().compareTo(r.getAmount()) == 0
+                && java.util.Objects.equals(src, r.getSourceAccountId())
+                && java.util.Objects.equals(dst, r.getDestinationAccountId());
     }
 
     @Transactional(readOnly = true)
@@ -172,8 +160,7 @@ public class TransactionService {
             String sortBy,
             String direction) {
 
-        // 1. Ownership validation
-        getUserAccount(userId, accountId);
+
 
         // 2. Decide sorting direction
         Sort.Direction sortDirection =
@@ -217,22 +204,6 @@ public class TransactionService {
         );
     }
 
-    private Account getUserAccount(
-            Long userId,
-            Long accountId) {
-
-        return accountRepository.findById(accountId)
-                .filter(account ->
-                        account.getUser()
-                                .getId()
-                                .equals(userId)
-                )
-                .orElseThrow(() ->
-                        new ResourceNotFoundException(
-                                "Account not found for this user"
-                        )
-                );
-    }
 
     private void ensureSufficientBalance(
             Account account,
