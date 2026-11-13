@@ -2,14 +2,13 @@ package in.payledger.service;
 
 import in.payledger.dto.CreateTransactionRequest;
 import in.payledger.dto.TransactionResponse;
-import in.payledger.entity.Account;
-import in.payledger.entity.Transaction;
-import in.payledger.entity.TransactionType;
+import in.payledger.entity.*;
 import in.payledger.exception.IdempotencyConflictException;
 import in.payledger.exception.InsufficientBalanceException;
 import in.payledger.exception.InvalidTransactionException;
 import in.payledger.exception.ResourceNotFoundException;
 import in.payledger.repository.AccountRepository;
+import in.payledger.repository.LedgerEntryRepository;
 import in.payledger.repository.TransactionRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -29,13 +28,14 @@ public class TransactionService {
 
     private final TransactionRepository transactionRepository;
     private final AccountRepository accountRepository;
+    private final LedgerEntryRepository ledgerEntryRepository;
 
-    public TransactionService(
-            TransactionRepository transactionRepository,
-            AccountRepository accountRepository) {
-
+    public TransactionService(TransactionRepository transactionRepository,
+                              AccountRepository accountRepository,
+                              LedgerEntryRepository ledgerEntryRepository) {
         this.transactionRepository = transactionRepository;
         this.accountRepository = accountRepository;
+        this.ledgerEntryRepository = ledgerEntryRepository;
     }
     @Transactional
     public TransactionResponse createTransaction(
@@ -129,11 +129,28 @@ public class TransactionService {
         transaction.setDescription(request.getDescription());
         transaction.setCreatedAt(LocalDateTime.now());
 
-        // saveAndFlush so a duplicate key fails here, inside the transaction, and rolls
-        // back the balance changes with it
-        return toResponse(transactionRepository.saveAndFlush(transaction));
+        Transaction saved = transactionRepository.saveAndFlush(transaction);
+        recordEntries(saved, type, sourceAccount, destinationAccount, request.getAmount());
+        return toResponse(saved);
     }
 
+    private void recordEntries(Transaction tx, TransactionType type,
+                               Account src, Account dst, BigDecimal amount) {
+        switch (type) {
+            case INCOME -> {
+                ledgerEntryRepository.save(new LedgerEntry(tx, null, EntryDirection.DEBIT, amount));
+                ledgerEntryRepository.save(new LedgerEntry(tx, dst, EntryDirection.CREDIT, amount));
+            }
+            case EXPENSE -> {
+                ledgerEntryRepository.save(new LedgerEntry(tx, src, EntryDirection.DEBIT, amount));
+                ledgerEntryRepository.save(new LedgerEntry(tx, null, EntryDirection.CREDIT, amount));
+            }
+            case TRANSFER -> {
+                ledgerEntryRepository.save(new LedgerEntry(tx, src, EntryDirection.DEBIT, amount));
+                ledgerEntryRepository.save(new LedgerEntry(tx, dst, EntryDirection.CREDIT, amount));
+            }
+        }
+    }
     private Account lockUserAccount(Long userId, Long accountId) {
         return accountRepository.findByIdForUpdate(accountId)
                 .filter(a -> a.getUser().getId().equals(userId))
