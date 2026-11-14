@@ -4,6 +4,7 @@ import in.payledger.entity.LedgerEntry;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.Repository;
 import org.springframework.data.repository.query.Param;
+import java.util.List;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -22,4 +23,8 @@ public interface LedgerEntryRepository extends Repository<LedgerEntry, Long> {
     @Query("select coalesce(sum(case when e.direction = in.payledger.entity.EntryDirection.CREDIT "
             + "then e.amount else -e.amount end), 0) from LedgerEntry e")
     BigDecimal netAll();
+    @Query("select e.account.id, sum(case when e.direction = in.payledger.entity.EntryDirection.CREDIT "
+            + "then e.amount else -e.amount end) from LedgerEntry e "
+            + "where e.account is not null group by e.account.id")
+    List<Object[]> netPerAccount();
 }

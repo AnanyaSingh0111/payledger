@@ -22,6 +22,8 @@ public class OpenApiConfig {
                                         + "pessimistic locking, and idempotent transfers."
                         )
                 )
+                .servers(java.util.List.of(
+                        new io.swagger.v3.oas.models.servers.Server().url("/").description("Current server")))
                 .addSecurityItem(
                         new SecurityRequirement()
                                 .addList("bearerAuth")

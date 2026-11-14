@@ -1,4 +1,9 @@
 package in.payledger.dto;
 
-public class MismatchDto {
-}
+import java.math.BigDecimal;
+
+public record MismatchDto(
+        Long accountId,
+        BigDecimal storedBalance,
+        BigDecimal ledgerBalance,
+        BigDecimal difference) { }
