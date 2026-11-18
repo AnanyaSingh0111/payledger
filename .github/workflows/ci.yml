@@ -24,6 +24,7 @@ jobs:
           --health-retries=20
 
     env:
+      SPRING_DATASOURCE_URL: jdbc:mysql://localhost:3306/payledger_test?createDatabaseIfNotExist=true
       SPRING_DATASOURCE_USERNAME: root
       SPRING_DATASOURCE_PASSWORD: ci-password
       JWT_SECRET: ci-only-secret-ci-only-secret-ci-only-1234
@@ -43,8 +44,4 @@ jobs:
         run: chmod +x mvnw
 
       - name: Run tests
-        run: >
-          ./mvnw -B test
-          -Dspring.datasource.url="jdbc:mysql://localhost:3306/payledger_test?createDatabaseIfNotExist=true"
-          -Dspring.datasource.username="root"
-          -Dspring.datasource.password="ci-password"
+        run: ./mvnw -B test
