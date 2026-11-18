@@ -38,7 +38,23 @@ Short notes on why PayLedger is built the way it is, including the trade-offs.
 
 **Why:** an earlier version returned HTTP 200 with the error only inside the body. Proper status codes (400, 401, 403, 404, 409, 422) make the API usable by real clients. The handler deliberately has no catch-all for `Exception`, so Spring Security's own 401 and 403 responses are not swallowed.
 
-## 6. `ddl-auto=update` for now
+## 6. Double-entry ledger
+
+**Decision:** every transaction writes two immutable ledger entries (a debit and a credit of the same amount) in the same database transaction as the balance change. Income and expense use a null "external" account as the counterparty, and opening balances are recorded as income.
+
+**Why:** a balance column alone cannot explain how it got its value, and a bug or manual edit corrupts it silently. With a ledger the system total is always zero and each balance can be recomputed from its entries and checked.
+
+**Trade-off:** more writes per transaction, and the stored balance is kept as a denormalized copy for fast reads, so it must be checked against the ledger.
+
+## 7. Reconciliation as a separate read-only check
+
+**Decision:** a service compares each account's stored balance with the sum of its ledger entries and checks that the whole ledger nets to zero. It runs from an admin-only endpoint and from a nightly scheduled job.
+
+**Why:** the stored balance is a copy kept for fast reads, so it can drift because of a bug or a manual edit. The ledger is the source of truth, and comparing the two detects silent corruption. The whole check runs in one read-only transaction, so it sees a consistent snapshot and a transfer committing mid-check cannot cause a false alarm.
+
+**Trade-off:** it detects problems but does not repair them or alert anyone yet (it logs an error). With several server instances the job would need a scheduler lock.
+
+## 8. `ddl-auto=update` for now
 
 **Decision:** let Hibernate create and update tables.
 
@@ -46,7 +62,7 @@ Short notes on why PayLedger is built the way it is, including the trade-offs.
 
 **Trade-off:** not safe for production schema changes. The plan is Flyway migrations.
 
-## 7. Secrets only through environment variables
+## 9. Secrets only through environment variables
 
 **Decision:** database credentials and the JWT secret are read from environment variables, with no default for either secret.
 
@@ -54,6 +70,7 @@ Short notes on why PayLedger is built the way it is, including the trade-offs.
 
 ## What I would do next
 
-- Add a double-entry ledger table (append-only entries that sum to zero) and a reconciliation job that checks balances against the ledger.
+- Add a ledger integrity test under concurrent load and GitHub Actions CI.
+- Add alerting for reconciliation mismatches and a scheduler lock for multiple instances.
 - Add a transactional outbox for events such as notifications.
 - Move schema management to Flyway and add GitHub Actions CI.

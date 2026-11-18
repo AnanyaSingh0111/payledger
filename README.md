@@ -1,6 +1,6 @@
 # PayLedger
 
-A secure wallet and transaction REST API built with **Java 21, Spring Boot, MySQL and JWT**. It handles income, expense and transfer transactions and stays correct under concurrent requests: no overdrafts, no deadlocks, and retried requests never move money twice.
+A secure wallet and transaction REST API with an **append-only double-entry ledger**, built with **Java 21, Spring Boot, MySQL and JWT**. It handles income, expense and transfer transactions and stays correct under concurrent requests: no overdrafts, no deadlocks, and retried requests never move money twice.
 
 **Live API (Swagger UI):** https://payledger-production-24a2045d.up.railway.app/swagger-ui/index.html
 
@@ -23,6 +23,7 @@ The first request after a period of inactivity can take a few seconds while the 
 - Accounts, plus **income, expense and transfer** transactions with paginated, sortable history
 - **Pessimistic row locking** (`SELECT ... FOR UPDATE`) with **ordered lock acquisition** to prevent overdrafts and deadlocks
 - **Idempotency keys** backed by a database unique constraint, so retries never duplicate a payment
+- **Reconciliation**: an admin-only endpoint and a nightly scheduled job compare every account balance with the sum of its ledger entries and flag any mismatch
 - Global exception handling with a consistent JSON error format
 - OpenAPI / Swagger UI documentation with a JWT **Authorize** button
 - Multi-stage Docker build and Docker Compose setup, deployed on Railway with MySQL
@@ -41,6 +42,7 @@ The first request after a period of inactivity can take a few seconds while the 
 | POST | `/api/users/{userId}/transactions` | Owner | Create a transaction (requires `Idempotency-Key` header) |
 | GET | `/api/users/{userId}/transactions/{transactionId}` | Owner | Get a transaction |
 | GET | `/api/users/{userId}/transactions/account/{accountId}` | Owner | Paginated history for an account |
+| POST | `/api/admin/reconciliation/run` | Admin | Compare every balance with its ledger entries |
 | GET | `/api/health` | Public | Health check |
 
 ## Concurrency testing
@@ -52,6 +54,7 @@ The first request after a period of inactivity can take a few seconds while the 
 | Overdraft | 50 parallel withdrawals of 100 from a balance of 1,000 | Exactly 10 succeed, final balance 0.00 |
 | Idempotency | 20 threads send the same request with the same key | Money moves once (balance 900.00) |
 | Opposing transfers | 1,000 transfers A to B and B to A on 32 threads | 0 failures, 0 deadlocks, balances exact (about 69 transfers/second on a local machine) |
+| Reconciliation | `ReconciliationTest` corrupts one stored balance by 5.00 behind the ledger's back | The check reports that account with a difference of exactly 5.00 and the system as unhealthy |
 
 Raw output from the runs is in [`docs/`](docs/). Run the tests yourself with a local MySQL database named `payledger_test`:
 
@@ -66,6 +69,69 @@ Raw output from the runs is in [`docs/`](docs/). Run the tests yourself with a l
 - **Idempotency:** `UNIQUE(user_id, idempotency_key)` lets the database decide the winner when identical requests race. The loser rolls back, including its balance changes, and its retry returns the stored result.
 
 More reasoning is in [DECISIONS.md](DECISIONS.md).
+
+## Architecture
+
+```mermaid
+flowchart LR
+    C[Client / Swagger UI] -->|HTTPS + JWT| F[JWT filter and security rules]
+    F --> CT[Controllers]
+    CT --> TS[TransactionService]
+    CT --> AS[AccountService]
+    CT --> RS[ReconciliationService]
+    J[Nightly reconciliation job] --> RS
+    TS --> R[(Repositories)]
+    AS --> R
+    RS --> R
+    R --> DB[(MySQL)]
+```
+
+A transfer runs in one database transaction: lock both accounts (lowest id first), check the balance, update both balances, store the transaction, and write the two ledger entries. Any failure rolls back everything.
+
+## Data model
+
+```mermaid
+erDiagram
+    USERS ||--o{ ACCOUNTS : owns
+    ACCOUNTS ||--o{ TRANSACTIONS : "source or destination"
+    TRANSACTIONS ||--|{ LEDGER_ENTRIES : produces
+    ACCOUNTS ||--o{ LEDGER_ENTRIES : "debited or credited"
+
+    USERS {
+        bigint id PK
+        string name
+        string email UK
+        string password_hash
+        string role
+    }
+    ACCOUNTS {
+        bigint id PK
+        bigint user_id FK
+        string name
+        string type
+        decimal balance
+        string currency
+        bigint version
+    }
+    TRANSACTIONS {
+        bigint id PK
+        bigint user_id
+        string idempotency_key
+        string type
+        decimal amount
+        bigint source_account_id FK
+        bigint destination_account_id FK
+    }
+    LEDGER_ENTRIES {
+        bigint id PK
+        bigint transaction_id FK
+        bigint account_id FK
+        string direction
+        decimal amount
+    }
+```
+
+`transactions` has a unique constraint on `(user_id, idempotency_key)`. A ledger entry with no account is the "external" side of an income or expense.
 
 ## Run locally with Docker
 
@@ -105,9 +171,9 @@ Java 21, Spring Boot, Spring Security, Spring Data JPA (Hibernate), MySQL, JWT (
 
 - Transfers move money between a single user's own accounts (a personal wallet, not peer-to-peer payments between users).
 - The schema is created by Hibernate (`ddl-auto=update`) instead of versioned Flyway migrations.
-- There is no separate double-entry ledger table yet.
+- Ledger immutability is enforced in the application (no setters, no update or delete repository methods); a database trigger or restricted permissions would be the production step.
 - Account creation accepts an initial balance for convenience, which is not production-grade.
 
 ## Roadmap
 
-Double-entry ledger with a nightly reconciliation job, transactional outbox, Flyway migrations, GitHub Actions CI, and peer-to-peer transfers between users.
+Ledger integrity test under concurrent load, GitHub Actions CI, peer-to-peer transfers and refunds, audit log, fraud rules, account freezing, transactional outbox, and Flyway migrations.
