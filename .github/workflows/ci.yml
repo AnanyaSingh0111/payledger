@@ -24,6 +24,7 @@ jobs:
           --health-retries=20
 
     env:
+      SPRING_DATASOURCE_URL: jdbc:mysql://localhost:3306/payledger_test?createDatabaseIfNotExist=true
       SPRING_DATASOURCE_USERNAME: root
       SPRING_DATASOURCE_PASSWORD: ci-password
       JWT_SECRET: ci-only-secret-ci-only-secret-ci-only-1234
@@ -38,20 +39,4 @@ jobs:
           cache: maven
 
       - run: chmod +x mvnw
-
-      - name: Run tests
-        run: |
-          set +e
-          ./mvnw -B -e test
-          TEST_EXIT_CODE=$?
-
-          echo "===== SUREFIRE REPORT FILES ====="
-          find target/surefire-reports -type f -maxdepth 1 -print
-
-          echo "===== SUREFIRE TXT REPORTS ====="
-          cat target/surefire-reports/*.txt || true
-
-          echo "===== SUREFIRE XML REPORTS ====="
-          cat target/surefire-reports/*.xml || true
-
-          exit $TEST_EXIT_CODE
+      - run: ./mvnw -B test
