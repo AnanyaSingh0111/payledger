@@ -55,7 +55,7 @@ The first request after a period of inactivity can take a few seconds while the 
 | Idempotency | 20 threads send the same request with the same key | Money moves once (balance 900.00) |
 | Opposing transfers | 1,000 transfers A to B and B to A on 32 threads | 0 failures, 0 deadlocks, balances exact (about 69 transfers/second on a local machine) |
 | Reconciliation | `ReconciliationTest` corrupts one stored balance by 5.00 behind the ledger's back | The check reports that account with a difference of exactly 5.00 and the system as unhealthy |
-
+| Ledger integrity | 300 concurrent transfers | Ledger nets to zero and every balance equals the sum of its entries |
 Raw output from the runs is in [`docs/`](docs/). Run the tests yourself with a local MySQL database named `payledger_test`:
 
 ```bash
