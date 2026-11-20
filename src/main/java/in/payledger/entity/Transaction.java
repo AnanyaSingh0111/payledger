@@ -46,6 +46,12 @@ public class Transaction {
     @Column(name = "idempotency_key", length = 64)
     private String idempotencyKey;
 
+    @Column(name = "refund_of_transaction_id", unique = true)
+    private Long refundOfTransactionId;
+
+    public Long getRefundOfTransactionId() { return refundOfTransactionId; }
+    public void setRefundOfTransactionId(Long refundOfTransactionId) { this.refundOfTransactionId = refundOfTransactionId; }
+
     public Long getUserId() {
         return userId;
     }

@@ -15,6 +15,7 @@ public class TransactionResponse {
     private String category;
     private String description;
     private LocalDateTime createdAt;
+    private Long refundOfTransactionId;
 
     public TransactionResponse() {
     }
@@ -27,7 +28,8 @@ public class TransactionResponse {
             BigDecimal amount,
             String category,
             String description,
-            LocalDateTime createdAt) {
+            LocalDateTime createdAt,
+            Long refundOfTransactionId) {
 
         this.id = id;
         this.sourceAccountId = sourceAccountId;
@@ -37,37 +39,16 @@ public class TransactionResponse {
         this.category = category;
         this.description = description;
         this.createdAt = createdAt;
+        this.refundOfTransactionId = refundOfTransactionId;
     }
 
-    public Long getId() {
-        return id;
-    }
-
-    public Long getSourceAccountId() {
-        return sourceAccountId;
-    }
-
-    public Long getDestinationAccountId() {
-        return destinationAccountId;
-    }
-
-    public TransactionType getType() {
-        return type;
-    }
-
-    public BigDecimal getAmount() {
-        return amount;
-    }
-
-    public String getCategory() {
-        return category;
-    }
-
-    public String getDescription() {
-        return description;
-    }
-
-    public LocalDateTime getCreatedAt() {
-        return createdAt;
-    }
+    public Long getId() { return id; }
+    public Long getSourceAccountId() { return sourceAccountId; }
+    public Long getDestinationAccountId() { return destinationAccountId; }
+    public TransactionType getType() { return type; }
+    public BigDecimal getAmount() { return amount; }
+    public String getCategory() { return category; }
+    public String getDescription() { return description; }
+    public LocalDateTime getCreatedAt() { return createdAt; }
+    public Long getRefundOfTransactionId() { return refundOfTransactionId; }
 }

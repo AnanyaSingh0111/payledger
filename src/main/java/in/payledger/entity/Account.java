@@ -14,6 +14,7 @@ public class Account {
     private Long id;
 
     @Version
+    @Column(nullable = false)
     private Long version;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
@@ -90,12 +91,8 @@ public class Account {
     public void setCreatedAt(LocalDateTime createdAt) {
         this.createdAt = createdAt;
     }
-
     public Long getVersion() {
         return version;
     }
 
-    public void setVersion(Long version) {
-        this.version = version;
-    }
 }

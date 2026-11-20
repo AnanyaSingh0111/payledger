@@ -34,6 +34,16 @@ public class TransactionController {
         return transactionService.createTransaction(userId, idempotencyKey, request);
     }
 
+    @PostMapping("/{transactionId}/refund")
+    @ResponseStatus(HttpStatus.CREATED)
+    public TransactionResponse refundTransaction(
+            @PathVariable Long userId,
+            @PathVariable Long transactionId,
+            @RequestHeader("Idempotency-Key") String idempotencyKey) {
+
+        return transactionService.refundTransaction(userId, transactionId, idempotencyKey);
+    }
+
     @GetMapping("/{transactionId}")
     public TransactionResponse getTransactionById(
             @PathVariable Long userId,

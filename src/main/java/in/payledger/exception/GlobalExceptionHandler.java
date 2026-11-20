@@ -76,7 +76,13 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(org.springframework.dao.DataIntegrityViolationException.class)
     public ResponseEntity<ErrorResponse> handleIntegrity(
             org.springframework.dao.DataIntegrityViolationException ex) {
-        return build(HttpStatus.CONFLICT,
-                "Duplicate or conflicting request. Retry with the same Idempotency-Key.", null);
+
+        ex.printStackTrace();
+
+        return build(
+                HttpStatus.CONFLICT,
+                ex.getMostSpecificCause().getMessage(),
+                null
+        );
     }
 }

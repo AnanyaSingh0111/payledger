@@ -17,4 +17,5 @@ public interface TransactionRepository
             Pageable pageable
     );
     Optional<Transaction> findByUserIdAndIdempotencyKey(Long userId, String idempotencyKey);
+    boolean existsByRefundOfTransactionId(Long refundOfTransactionId);
 }
