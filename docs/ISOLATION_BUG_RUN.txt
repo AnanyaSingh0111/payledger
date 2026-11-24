@@ -1,0 +1,19 @@
+Daily-limit bypass under REPEATABLE READ, reproduced on 2026-11-24 (local MySQL 8).
+
+Test: FraudIntegrationTest#dailyLimitHoldsUnderConcurrency
+Setup: wallet with 500,000. Daily outgoing limit 200,000.
+       10 threads each transfer 30,000 at the same instant.
+Correct answer: 6 succeed (180,000), 4 blocked.
+
+--- BEFORE: TransactionService.createTransaction at Isolation.REPEATABLE_READ (MySQL default), 3 runs ---
+DAILY LIMIT CONCURRENCY -> succeeded=10 blocked=0
+[ERROR] Tests run: 1, Failures: 1 ... expected: 6
+DAILY LIMIT CONCURRENCY -> succeeded=10 blocked=0
+[ERROR] Tests run: 1, Failures: 1 ... expected: 6
+DAILY LIMIT CONCURRENCY -> succeeded=10 blocked=0
+[ERROR] Tests run: 1, Failures: 1 ... expected: 6
+=> 300,000 sent against a 200,000 limit, every time.
+
+--- AFTER: Isolation.READ_COMMITTED (current code) ---
+DAILY LIMIT CONCURRENCY -> succeeded=6 blocked=4
+Tests run: 1, Failures: 0

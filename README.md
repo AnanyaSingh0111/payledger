@@ -146,7 +146,9 @@ erDiagram
 
 ## Proof: tests
 
-All tests run against a real MySQL with real threads released by a latch (`./mvnw test`).
+All tests run against a real MySQL with real threads released by a latch (`./mvnw test`). Recorded output: [`docs/PASSED_RUN.txt`](docs/PASSED_RUN.txt).
+
+> **Bugs I broke on purpose, and how I fixed them:** [docs/BUGS_AND_FIXES.md](docs/BUGS_AND_FIXES.md). Lost updates without locking (5,000 paid out of a 1,000 balance), deadlocks with optimistic locking (912 of 1,000 transfers failed), and a daily limit bypassed by MySQL's default isolation level (10 of 10 parallel transfers passed a limit that allows 6). Each one has measured before/after numbers.
 
 | Test | What it proves |
 |---|---|
@@ -223,4 +225,4 @@ Java 21, Spring Boot 4, Spring Security, Spring Data JPA (Hibernate 7), MySQL 8,
 - The event publisher logs events; a real deployment would plug in Kafka or a notification service.
 - Scheduled jobs assume a single instance (the outbox poller is already multi-instance safe; the nightly job would need ShedLock).
 
-Design reasoning and trade-offs: **[DECISIONS.md](DECISIONS.md)**.
+Design reasoning and trade-offs: **[DECISIONS.md](DECISIONS.md)**. Bugs found and fixed, with evidence: **[docs/BUGS_AND_FIXES.md](docs/BUGS_AND_FIXES.md)**.

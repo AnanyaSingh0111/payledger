@@ -100,7 +100,7 @@ Reconciliation wants the opposite: one consistent snapshot across several querie
 
 **Decision:** `@Digits(fraction = 2)` and a maximum on every amount.
 
-**Why:** `DECIMAL(19,2)` silently rounds `10.005`. Java would have computed with the full value and MySQL stored a rounded one, so balances could drift from the ledger by fractions.
+**Why:** `DECIMAL(19,2)` silently rounds `10.005` to `10.01`. The response was built from the Java object, so the API confirmed a payment of 10.005 while the database recorded 10.01. Rejecting the request is honest; rounding it is not.
 
 ## 14. Flyway owns the schema
 
