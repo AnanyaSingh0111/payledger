@@ -1,43 +1,15 @@
 package in.payledger.dto;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+
 import java.time.LocalDateTime;
 import java.util.Map;
 
-public class ErrorResponse {
-
-    private LocalDateTime timestamp;
-    private int status;
-    private String message;
-    private Map<String, String> errors;
-
-    public ErrorResponse() {
-    }
-
-    public ErrorResponse(
-            LocalDateTime timestamp,
-            int status,
-            String message,
-            Map<String, String> errors) {
-
-        this.timestamp = timestamp;
-        this.status = status;
-        this.message = message;
-        this.errors = errors;
-    }
-
-    public LocalDateTime getTimestamp() {
-        return timestamp;
-    }
-
-    public int getStatus() {
-        return status;
-    }
-
-    public String getMessage() {
-        return message;
-    }
-
-    public Map<String, String> getErrors() {
-        return errors;
-    }
-}
+@JsonInclude(JsonInclude.Include.NON_NULL)
+public record ErrorResponse(
+        LocalDateTime timestamp,
+        int status,
+        String error,
+        String message,
+        String path,
+        Map<String, String> errors) { }

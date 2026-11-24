@@ -1,84 +1,44 @@
 package in.payledger;
 
 import in.payledger.dto.CreateTransactionRequest;
-import in.payledger.entity.*;
-import in.payledger.repository.*;
+import in.payledger.dto.TransactionResponse;
+import in.payledger.entity.Account;
+import in.payledger.entity.User;
+import in.payledger.service.TransactionFacade;
 import in.payledger.service.TransactionService;
+import in.payledger.support.IntegrationTest;
+import in.payledger.support.TestData;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 
-import java.math.BigDecimal;
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.*;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import static in.payledger.support.TestData.money;
+import static org.assertj.core.api.Assertions.assertThat;
 
-@SpringBootTest(properties = {
-        "app.jwt.secret=test-secret-test-secret-test-secret-123456",
-        "spring.datasource.url=jdbc:mysql://localhost:3306/payledger_test?createDatabaseIfNotExist=true",
-        "spring.jpa.show-sql=false"
-})
+/**
+ * Real threads against real MySQL, all released at the same instant by a latch.
+ * These are the race conditions the locking and idempotency design exists to prevent.
+ */
+@IntegrationTest
 class ConcurrencyTest {
 
     @Autowired TransactionService transactionService;
-    @Autowired UserRepository userRepository;
-    @Autowired AccountRepository accountRepository;
-
-    // ---------- helpers ----------
-
-    private User newUser() {
-        User u = new User();
-        u.setName("T");
-        u.setEmail("t" + System.nanoTime() + "@x.com");
-        u.setPasswordHash("x");
-        u.setRole(Role.USER);
-        u.setCreatedAt(LocalDateTime.now());
-        u.setUpdatedAt(LocalDateTime.now());
-        return userRepository.save(u);
-    }
-
-    private Account newAccount(User u, String balance) {
-        Account a = new Account();
-        a.setUser(u);
-        a.setName("Acc");
-        a.setType(AccountType.values()[0]);
-        a.setBalance(new BigDecimal(balance));
-        a.setCurrency("INR");
-        a.setCreatedAt(LocalDateTime.now());
-        return accountRepository.save(a);
-    }
-
-    private CreateTransactionRequest expense(Long accountId, String amount) {
-        CreateTransactionRequest r = new CreateTransactionRequest();
-        r.setType(TransactionType.EXPENSE);
-        r.setSourceAccountId(accountId);
-        r.setAmount(new BigDecimal(amount));
-        return r;
-    }
-
-    private CreateTransactionRequest transfer(Long from, Long to, String amount) {
-        CreateTransactionRequest r = new CreateTransactionRequest();
-        r.setType(TransactionType.TRANSFER);
-        r.setSourceAccountId(from);
-        r.setDestinationAccountId(to);
-        r.setAmount(new BigDecimal(amount));
-        return r;
-    }
-
-    private BigDecimal balanceOf(Long accountId) {
-        return accountRepository.findById(accountId).get().getBalance();
-    }
-
-    // ---------- Test 1: no overdraft ----------
+    @Autowired TransactionFacade transactionFacade;
+    @Autowired TestData data;
 
     @Test
-    void parallelExpensesNeverOverdrawAndExactlyTenSucceed() throws Exception {
-        User user = newUser();
-        Account acc = newAccount(user, "1000.00");
+    void parallelWithdrawalsNeverOverdrawAndExactlyTenSucceed() throws Exception {
+        User user = data.user();
+        Account acc = data.fundedAccount(user, "1000.00");
 
         int threads = 50;
         ExecutorService pool = Executors.newFixedThreadPool(threads);
@@ -88,69 +48,75 @@ class ConcurrencyTest {
         List<Future<?>> futures = new ArrayList<>();
 
         for (int i = 0; i < threads; i++) {
-            final String key = "key-" + i;
             futures.add(pool.submit(() -> {
+                start.await();
                 try {
-                    start.await();
-                    transactionService.createTransaction(
-                            user.getId(), key, expense(acc.getId(), "100.00"));
+                    transactionService.createTransaction(user.getId(), TestData.key("wd"),
+                            CreateTransactionRequest.withdrawal(acc.getId(), money("100.00")));
                     ok.incrementAndGet();
                 } catch (Exception e) {
                     failed.incrementAndGet();
                 }
-            }));
-        }
-
-        long t0 = System.nanoTime();
-        start.countDown();                       // release all 50 threads at once
-        for (Future<?> f : futures) f.get();
-        long ms = (System.nanoTime() - t0) / 1_000_000;
-        pool.shutdown();
-
-        System.out.println("EXPENSE TEST -> succeeded=" + ok.get()
-                + " failed=" + failed.get() + " timeMs=" + ms
-                + " finalBalance=" + balanceOf(acc.getId()));
-
-        assertEquals(10, ok.get());
-        assertEquals(0, new BigDecimal("0.00").compareTo(balanceOf(acc.getId())));
-    }
-
-    // ---------- Test 2: idempotency ----------
-
-    @Test
-    void sameIdempotencyKeyDebitsOnlyOnce() throws Exception {
-        User user = newUser();
-        Account acc = newAccount(user, "1000.00");
-
-        int threads = 20;
-        ExecutorService pool = Executors.newFixedThreadPool(threads);
-        CountDownLatch start = new CountDownLatch(1);
-        List<Future<?>> futures = new ArrayList<>();
-
-        for (int i = 0; i < threads; i++) {
-            futures.add(pool.submit(() -> {
-                try {
-                    start.await();
-                    transactionService.createTransaction(
-                            user.getId(), "same-key", expense(acc.getId(), "100.00"));
-                } catch (Exception ignored) { }
+                return null;
             }));
         }
         start.countDown();
         for (Future<?> f : futures) f.get();
         pool.shutdown();
 
-        System.out.println("IDEMPOTENCY TEST -> finalBalance=" + balanceOf(acc.getId()));
-        assertEquals(0, new BigDecimal("900.00").compareTo(balanceOf(acc.getId())));
+        System.out.println("OVERDRAFT TEST -> succeeded=" + ok.get() + " failed=" + failed.get()
+                + " finalBalance=" + data.balance(acc));
+
+        assertThat(ok.get()).isEqualTo(10);
+        assertThat(data.balance(acc)).isEqualByComparingTo("0.00");
+        assertThat(data.ledgerBalance(acc)).isEqualByComparingTo("0.00");
     }
 
-    // ---------- Test 3: 1,000 opposing transfers, no deadlock, money conserved ----------
+    @Test
+    void twentyRetriesWithTheSameKeyMoveMoneyOnceAndAllGetTheSameAnswer() throws Exception {
+        User user = data.user();
+        Account acc = data.fundedAccount(user, "1000.00");
+        String key = TestData.key("same");
+
+        int threads = 20;
+        ExecutorService pool = Executors.newFixedThreadPool(threads);
+        CountDownLatch start = new CountDownLatch(1);
+        Set<Long> returnedIds = ConcurrentHashMap.newKeySet();
+        AtomicInteger errors = new AtomicInteger();
+        List<Future<?>> futures = new ArrayList<>();
+
+        for (int i = 0; i < threads; i++) {
+            futures.add(pool.submit(() -> {
+                start.await();
+                try {
+                    TransactionResponse r = transactionFacade.create(user.getId(), key,
+                            CreateTransactionRequest.withdrawal(acc.getId(), money("100.00")));
+                    returnedIds.add(r.id());
+                } catch (Exception e) {
+                    errors.incrementAndGet();
+                    System.out.println("IDEMPOTENCY ERROR: " + e);
+                }
+                return null;
+            }));
+        }
+        start.countDown();
+        for (Future<?> f : futures) f.get();
+        pool.shutdown();
+
+        System.out.println("IDEMPOTENCY TEST -> distinct ids=" + returnedIds + " errors=" + errors.get()
+                + " finalBalance=" + data.balance(acc));
+
+        // every caller, including the ones that lost the race, gets the same transaction back
+        assertThat(errors.get()).isZero();
+        assertThat(returnedIds).hasSize(1);
+        assertThat(data.balance(acc)).isEqualByComparingTo("900.00");
+    }
 
     @Test
     void thousandOpposingTransfersKeepExactBalancesAndNeverDeadlock() throws Exception {
-        User user = newUser();
-        Account a = newAccount(user, "10000.00");
-        Account b = newAccount(user, "10000.00");
+        User user = data.user();
+        Account a = data.fundedAccount(user, "10000.00");
+        Account b = data.fundedAccount(user, "10000.00");
 
         int tasks = 1000;
         ExecutorService pool = Executors.newFixedThreadPool(32);
@@ -162,19 +128,19 @@ class ConcurrencyTest {
         for (int i = 0; i < tasks; i++) {
             final int n = i;
             futures.add(pool.submit(() -> {
+                start.await();
+                // even tasks A -> B, odd tasks B -> A: the classic deadlock pattern
+                Long from = (n % 2 == 0) ? a.getId() : b.getId();
+                Long to = (n % 2 == 0) ? b.getId() : a.getId();
                 try {
-                    start.await();
-                    // even tasks: A -> B, odd tasks: B -> A (the deadlock-prone pattern)
-                    Long from = (n % 2 == 0) ? a.getId() : b.getId();
-                    Long to   = (n % 2 == 0) ? b.getId() : a.getId();
-                    transactionService.createTransaction(
-                            user.getId(), "xfer-" + n, transfer(from, to, "1.00"));
+                    transactionService.createTransaction(user.getId(), "xfer-" + n + "-" + a.getId(),
+                            CreateTransactionRequest.transfer(from, to, money("1.00")));
                     ok.incrementAndGet();
                 } catch (Exception e) {
                     failed.incrementAndGet();
-                    System.out.println("FAILED: " + e.getClass().getSimpleName()
-                            + " " + e.getMessage());
+                    System.out.println("FAILED: " + e.getClass().getSimpleName() + " " + e.getMessage());
                 }
+                return null;
             }));
         }
 
@@ -184,18 +150,15 @@ class ConcurrencyTest {
         long ms = (System.nanoTime() - t0) / 1_000_000;
         pool.shutdown();
 
-        BigDecimal balA = balanceOf(a.getId());
-        BigDecimal balB = balanceOf(b.getId());
-
         System.out.println("TRANSFER TEST -> succeeded=" + ok.get() + " failed=" + failed.get()
                 + " timeMs=" + ms + " throughput=" + (tasks * 1000L / Math.max(ms, 1)) + " tx/s"
-                + " balA=" + balA + " balB=" + balB);
+                + " balA=" + data.balance(a) + " balB=" + data.balance(b));
 
-        assertEquals(0, failed.get());
-        // 500 sent each way, so both accounts end exactly where they started
-        assertEquals(0, new BigDecimal("10000.00").compareTo(balA));
-        assertEquals(0, new BigDecimal("10000.00").compareTo(balB));
-        // total money is conserved
-        assertEquals(0, new BigDecimal("20000.00").compareTo(balA.add(balB)));
+        assertThat(failed.get()).isZero();
+        // 500 each way, so both end exactly where they started, and the ledger agrees
+        assertThat(data.balance(a)).isEqualByComparingTo("10000.00");
+        assertThat(data.balance(b)).isEqualByComparingTo("10000.00");
+        assertThat(data.ledgerBalance(a)).isEqualByComparingTo("10000.00");
+        assertThat(data.ledgerBalance(b)).isEqualByComparingTo("10000.00");
     }
 }

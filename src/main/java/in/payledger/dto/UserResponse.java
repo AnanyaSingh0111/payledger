@@ -1,41 +1,14 @@
 package in.payledger.dto;
 
-public class UserResponse {
+import in.payledger.entity.Role;
+import in.payledger.entity.User;
+import in.payledger.entity.UserStatus;
 
-    private Long id;
-    private String name;
-    private String email;
+import java.time.LocalDateTime;
 
-    public UserResponse() {
-    }
+public record UserResponse(Long id, String name, String email, Role role, UserStatus status, LocalDateTime createdAt) {
 
-    public UserResponse(Long id, String name, String email) {
-        this.id = id;
-        this.name = name;
-        this.email = email;
-    }
-
-    public Long getId() {
-        return id;
-    }
-
-    public void setId(Long id) {
-        this.id = id;
-    }
-
-    public String getName() {
-        return name;
-    }
-
-    public void setName(String name) {
-        this.name = name;
-    }
-
-    public String getEmail() {
-        return email;
-    }
-
-    public void setEmail(String email) {
-        this.email = email;
+    public static UserResponse from(User u) {
+        return new UserResponse(u.getId(), u.getName(), u.getEmail(), u.getRole(), u.getStatus(), u.getCreatedAt());
     }
 }

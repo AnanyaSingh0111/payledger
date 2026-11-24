@@ -13,6 +13,10 @@ public class Account {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    /**
+     * Optimistic-locking version. Money movement uses pessimistic row locks, so this is a
+     * safety net that also catches any update path that forgets to lock.
+     */
     @Version
     @Column(nullable = false)
     private Long version;
@@ -28,11 +32,16 @@ public class Account {
     @Column(nullable = false, length = 20)
     private AccountType type;
 
-    @Column(nullable = false, precision = 19, scale = 2)
-    private BigDecimal balance;
-
-    @Column(nullable = false, length = 3)
+    @Column(nullable = false, length = 3, columnDefinition = "char(3)")
     private String currency = "INR";
+
+    /** Denormalised copy of the ledger total, kept for fast reads and checked by reconciliation. */
+    @Column(nullable = false, precision = 19, scale = 2)
+    private BigDecimal balance = BigDecimal.ZERO;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private AccountStatus status = AccountStatus.ACTIVE;
 
     @Column(nullable = false)
     private LocalDateTime createdAt;
@@ -40,59 +49,33 @@ public class Account {
     public Account() {
     }
 
-    public Long getId() {
-        return id;
+    @PrePersist
+    void onCreate() {
+        if (createdAt == null) createdAt = LocalDateTime.now();
     }
 
-    public User getUser() {
-        return user;
-    }
+    public boolean isFrozen() { return status == AccountStatus.FROZEN; }
 
-    public void setUser(User user) {
-        this.user = user;
-    }
+    public boolean isOwnedBy(Long userId) { return user.getId().equals(userId); }
 
-    public String getName() {
-        return name;
-    }
+    public void credit(BigDecimal amount) { balance = balance.add(amount); }
 
-    public void setName(String name) {
-        this.name = name;
-    }
+    public void debit(BigDecimal amount) { balance = balance.subtract(amount); }
 
-    public AccountType getType() {
-        return type;
-    }
-
-    public void setType(AccountType type) {
-        this.type = type;
-    }
-
-    public BigDecimal getBalance() {
-        return balance;
-    }
-
-    public void setBalance(BigDecimal balance) {
-        this.balance = balance;
-    }
-
-    public String getCurrency() {
-        return currency;
-    }
-
-    public void setCurrency(String currency) {
-        this.currency = currency;
-    }
-
-    public LocalDateTime getCreatedAt() {
-        return createdAt;
-    }
-
-    public void setCreatedAt(LocalDateTime createdAt) {
-        this.createdAt = createdAt;
-    }
-    public Long getVersion() {
-        return version;
-    }
-
+    public Long getId() { return id; }
+    public Long getVersion() { return version; }
+    public User getUser() { return user; }
+    public void setUser(User user) { this.user = user; }
+    public String getName() { return name; }
+    public void setName(String name) { this.name = name; }
+    public AccountType getType() { return type; }
+    public void setType(AccountType type) { this.type = type; }
+    public String getCurrency() { return currency; }
+    public void setCurrency(String currency) { this.currency = currency; }
+    public BigDecimal getBalance() { return balance; }
+    public void setBalance(BigDecimal balance) { this.balance = balance; }
+    public AccountStatus getStatus() { return status; }
+    public void setStatus(AccountStatus status) { this.status = status; }
+    public LocalDateTime getCreatedAt() { return createdAt; }
+    public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
 }

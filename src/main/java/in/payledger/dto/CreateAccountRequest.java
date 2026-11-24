@@ -1,54 +1,36 @@
 package in.payledger.dto;
 
 import in.payledger.entity.AccountType;
+import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 import java.math.BigDecimal;
 
-public class CreateAccountRequest {
+public record CreateAccountRequest(
 
-    @NotBlank(message = "Account name is required")
-    @Size(max = 100, message = "Account name must not exceed 100 characters")
-    private String name;
+        @NotBlank(message = "Account name is required")
+        @Size(max = 100, message = "Account name must not exceed 100 characters")
+        String name,
 
-    @NotNull(message = "Account type is required")
-    private AccountType type;
+        @NotNull(message = "Account type is required")
+        AccountType type,
 
-    @NotNull(message = "Initial balance is required")
-    @DecimalMin(
-            value = "0.00",
-            inclusive = true,
-            message = "Initial balance cannot be negative"
-    )
-    private BigDecimal initialBalance;
+        /** ISO 4217 code such as INR or USD. Defaults to INR. */
+        @Pattern(regexp = "[A-Z]{3}", message = "Currency must be a 3-letter ISO code such as INR")
+        String currency,
 
-    public CreateAccountRequest() {
-    }
+        /** Optional. Recorded in the ledger as a TOP_UP, never written straight into the balance. */
+        @DecimalMin(value = "0.00", message = "Initial balance cannot be negative")
+        @DecimalMax(value = "10000000.00", message = "Initial balance must not exceed 10,000,000")
+        @Digits(integer = 17, fraction = 2, message = "Initial balance can have at most 2 decimal places")
+        BigDecimal initialBalance) {
 
-    public String getName() {
-        return name;
-    }
-
-    public void setName(String name) {
-        this.name = name;
-    }
-
-    public AccountType getType() {
-        return type;
-    }
-
-    public void setType(AccountType type) {
-        this.type = type;
-    }
-
-    public BigDecimal getInitialBalance() {
-        return initialBalance;
-    }
-
-    public void setInitialBalance(BigDecimal initialBalance) {
-        this.initialBalance = initialBalance;
+    public CreateAccountRequest(String name, AccountType type) {
+        this(name, type, null, null);
     }
 }

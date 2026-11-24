@@ -1,18 +1,10 @@
 package in.payledger.dto;
 
-public class AuthResponse {
+import in.payledger.entity.Role;
 
-    private final String token;
-    private final String tokenType;
-    private final Long userId;
+public record AuthResponse(String token, String tokenType, long expiresInSeconds, Long userId, Role role) {
 
-    public AuthResponse(String token, Long userId) {
-        this.token = token;
-        this.tokenType = "Bearer";
-        this.userId = userId;
+    public AuthResponse(String token, long expiresInSeconds, Long userId, Role role) {
+        this(token, "Bearer", expiresInSeconds, userId, role);
     }
-
-    public String getToken() { return token; }
-    public String getTokenType() { return tokenType; }
-    public Long getUserId() { return userId; }
 }

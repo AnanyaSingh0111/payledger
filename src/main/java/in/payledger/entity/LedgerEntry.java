@@ -6,12 +6,14 @@ import org.hibernate.annotations.Immutable;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
+/**
+ * One side of a double-entry posting. Append-only on three levels: Hibernate never issues an
+ * UPDATE (@Immutable), the repository exposes no update or delete method, and database triggers
+ * reject both.
+ */
 @Entity
-@Immutable   // Hibernate will never issue an UPDATE for this entity
-@Table(name = "ledger_entries", indexes = {
-        @Index(name = "idx_le_account", columnList = "account_id"),
-        @Index(name = "idx_le_tx", columnList = "transaction_id")
-})
+@Immutable
+@Table(name = "ledger_entries")
 public class LedgerEntry {
 
     @Id
@@ -22,7 +24,7 @@ public class LedgerEntry {
     @JoinColumn(name = "transaction_id", nullable = false)
     private Transaction transaction;
 
-    // null = the "external" counterparty (money entering or leaving the system)
+    /** null = the "external" counterparty (money entering or leaving the system). */
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "account_id")
     private Account account;
@@ -46,6 +48,11 @@ public class LedgerEntry {
         this.direction = direction;
         this.amount = amount;
         this.createdAt = LocalDateTime.now();
+    }
+
+    /** Signed effect on the account: credits add, debits subtract. */
+    public BigDecimal signedAmount() {
+        return direction == EntryDirection.CREDIT ? amount : amount.negate();
     }
 
     public Long getId() { return id; }

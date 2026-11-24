@@ -1,60 +1,27 @@
 package in.payledger.dto;
 
+import org.springframework.data.domain.Page;
+
 import java.util.List;
+import java.util.function.Function;
 
-public class PageResponse<T> {
+public record PageResponse<T>(
+        List<T> content,
+        int pageNumber,
+        int pageSize,
+        long totalElements,
+        int totalPages,
+        boolean first,
+        boolean last) {
 
-    private List<T> content;
-    private int pageNumber;
-    private int pageSize;
-    private long totalElements;
-    private int totalPages;
-    private boolean first;
-    private boolean last;
-
-    public PageResponse(
-            List<T> content,
-            int pageNumber,
-            int pageSize,
-            long totalElements,
-            int totalPages,
-            boolean first,
-            boolean last) {
-
-        this.content = content;
-        this.pageNumber = pageNumber;
-        this.pageSize = pageSize;
-        this.totalElements = totalElements;
-        this.totalPages = totalPages;
-        this.first = first;
-        this.last = last;
-    }
-
-    public List<T> getContent() {
-        return content;
-    }
-
-    public int getPageNumber() {
-        return pageNumber;
-    }
-
-    public int getPageSize() {
-        return pageSize;
-    }
-
-    public long getTotalElements() {
-        return totalElements;
-    }
-
-    public int getTotalPages() {
-        return totalPages;
-    }
-
-    public boolean isFirst() {
-        return first;
-    }
-
-    public boolean isLast() {
-        return last;
+    public static <E, T> PageResponse<T> from(Page<E> page, Function<E, T> mapper) {
+        return new PageResponse<>(
+                page.getContent().stream().map(mapper).toList(),
+                page.getNumber(),
+                page.getSize(),
+                page.getTotalElements(),
+                page.getTotalPages(),
+                page.isFirst(),
+                page.isLast());
     }
 }

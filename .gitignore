@@ -33,3 +33,6 @@ build/
 
 .env
 docs/*_full.txt
+
+# local test DB credentials (see src/test/resources/application.properties)
+test-db.properties

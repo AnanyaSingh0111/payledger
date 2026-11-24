@@ -1,59 +1,23 @@
 package in.payledger.dto;
 
+import in.payledger.entity.Account;
+import in.payledger.entity.AccountStatus;
 import in.payledger.entity.AccountType;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
-public class AccountResponse {
+public record AccountResponse(
+        Long id,
+        String name,
+        AccountType type,
+        String currency,
+        BigDecimal balance,
+        AccountStatus status,
+        LocalDateTime createdAt) {
 
-    private Long id;
-    private String name;
-    private AccountType type;
-    private BigDecimal balance;
-    private String currency;
-    private LocalDateTime createdAt;
-
-    public AccountResponse() {
-    }
-
-    public AccountResponse(
-            Long id,
-            String name,
-            AccountType type,
-            BigDecimal balance,
-            String currency,
-            LocalDateTime createdAt) {
-
-        this.id = id;
-        this.name = name;
-        this.type = type;
-        this.balance = balance;
-        this.currency = currency;
-        this.createdAt = createdAt;
-    }
-
-    public Long getId() {
-        return id;
-    }
-
-    public String getName() {
-        return name;
-    }
-
-    public AccountType getType() {
-        return type;
-    }
-
-    public BigDecimal getBalance() {
-        return balance;
-    }
-
-    public String getCurrency() {
-        return currency;
-    }
-
-    public LocalDateTime getCreatedAt() {
-        return createdAt;
+    public static AccountResponse from(Account a) {
+        return new AccountResponse(a.getId(), a.getName(), a.getType(), a.getCurrency(),
+                a.getBalance(), a.getStatus(), a.getCreatedAt());
     }
 }

@@ -1,148 +1,190 @@
 # PayLedger
 
-A secure wallet and transaction REST API with an **append-only double-entry ledger**, built with **Java 21, Spring Boot, MySQL and JWT**. It handles income, expense and transfer transactions and stays correct under concurrent requests: no overdrafts, no deadlocks, and retried requests never move money twice.
+A wallet and payments REST API built around an **append-only double-entry ledger**, with **Java 21, Spring Boot, MySQL and JWT**. Users top up, withdraw, pay each other and refund payments, and the system stays correct under concurrent load: no overdrafts, no deadlocks, no double spending on retries, and every balance can be proven against the ledger.
 
 **Live API (Swagger UI):** https://payledger-production-24a2045d.up.railway.app/swagger-ui/index.html
+
+## Highlights
+
+- **Double-entry ledger**: every money movement writes a debit and a credit that sum to zero. Ledger and audit tables are append-only, enforced by **MySQL triggers**, not just application code.
+- **Idempotency keys**: a retried request returns the original result and never moves money twice, even when 20 identical requests race (`UNIQUE` constraint, post-lock re-check, replay on conflict).
+- **Pessimistic row locking with one global lock order**: 1,000 opposing transfers on 32 threads, 0 deadlocks, exact balances.
+- **Isolation-level aware**: money movement runs at READ COMMITTED so the daily-limit check cannot be bypassed by parallel requests (see [DECISIONS.md](DECISIONS.md#4-read-committed-for-money-movement-repeatable-read-for-reconciliation)).
+- **Transactional outbox** with a `SKIP LOCKED` poller, exponential backoff and a dead-letter state.
+- **Reconciliation** (nightly and on demand) that proves every balance equals its ledger total.
+- **Fraud rules (Strategy pattern)**: daily limit (blocks), rapid transfers and large amounts (flag for admin review).
+- **Admin tools**: review fraud flags, freeze wallets, disable users (tokens stop working at once), audit trail.
+- **Flyway** migrations with CHECK constraints and foreign keys; Hibernate only validates.
+- **38 tests** against a real MySQL: unit (Mockito), integration, concurrency and full HTTP flows. CI on GitHub Actions.
 
 ## Try it in 2 minutes
 
 1. Open the Swagger UI link above.
 2. `POST /api/users`: register (name, email, password of 8+ characters).
-3. `POST /api/auth/login`: log in and copy the `token` from the response.
-4. Click **Authorize** (top right), paste the token (without the word "Bearer"), and confirm.
-5. `POST /api/users/{userId}/accounts`: create two accounts (for example type `BANK` and `CASH`).
-6. `POST /api/users/{userId}/transactions`: create a `TRANSFER` between them. Set an `Idempotency-Key` header (any unique string up to 64 characters).
-7. Send the same request again with the same key: you get the same transaction back and the balance changes only once.
+3. `POST /api/auth/login`: copy the `token` from the response.
+4. Click **Authorize**, paste the token (without "Bearer").
+5. `POST /api/users/{userId}/accounts`: open a wallet, e.g. `{"name":"Main","type":"WALLET","initialBalance":500}`.
+6. `POST /api/users/{userId}/transactions` with header `Idempotency-Key: any-unique-string`:
+   `{"type":"TRANSFER","sourceAccountId":1,"destinationAccountId":2,"amount":25}` (the destination can be another user's wallet).
+7. Send the same request again with the same key: same transaction back, money moved once.
+8. `GET /api/users/{userId}/accounts/{accountId}`: the balance plus the balance recomputed from the ledger.
 
-The first request after a period of inactivity can take a few seconds while the host wakes up.
-
-## Features
-
-- Stateless **JWT authentication**, BCrypt password hashing, `USER` and `ADMIN` roles
-- **Ownership checks**: a user can only read or change their own accounts and transactions (401 without a token, 403 for another user's data)
-- Accounts, plus **income, expense and transfer** transactions with paginated, sortable history
-- **Pessimistic row locking** (`SELECT ... FOR UPDATE`) with **ordered lock acquisition** to prevent overdrafts and deadlocks
-- **Idempotency keys** backed by a database unique constraint, so retries never duplicate a payment
-- **Reconciliation**: an admin-only endpoint and a nightly scheduled job compare every account balance with the sum of its ledger entries and flag any mismatch
-- Global exception handling with a consistent JSON error format
-- OpenAPI / Swagger UI documentation with a JWT **Authorize** button
-- Multi-stage Docker build and Docker Compose setup, deployed on Railway with MySQL
-
-## API overview
+## API
 
 | Method | Path | Auth | Purpose |
 |---|---|---|---|
 | POST | `/api/users` | Public | Register |
 | POST | `/api/auth/login` | Public | Log in, receive a JWT |
 | GET | `/api/users/{id}` | Owner or admin | Get a user |
-| GET | `/api/users` | Admin | List users |
-| DELETE | `/api/users/{id}` | Admin | Delete a user |
-| POST | `/api/users/{userId}/accounts` | Owner | Create an account |
-| GET | `/api/users/{userId}/accounts` | Owner | List accounts |
-| POST | `/api/users/{userId}/transactions` | Owner | Create a transaction (requires `Idempotency-Key` header) |
-| GET | `/api/users/{userId}/transactions/{transactionId}` | Owner | Get a transaction |
-| GET | `/api/users/{userId}/transactions/account/{accountId}` | Owner | Paginated history for an account |
-| POST | `/api/admin/reconciliation/run` | Admin | Compare every balance with its ledger entries |
-| GET | `/api/health` | Public | Health check |
+| GET | `/api/users` | Admin | List users (paged) |
+| POST | `/api/users/{userId}/accounts` | Owner | Open a wallet (any ISO currency, default INR) |
+| GET | `/api/users/{userId}/accounts` | Owner | List wallets |
+| GET | `/api/users/{userId}/accounts/{accountId}` | Owner | Wallet + balance recomputed from the ledger |
+| GET | `/api/users/{userId}/accounts/{accountId}/statement` | Owner | Ledger entries (paged) |
+| POST | `/api/users/{userId}/transactions` | Owner | `TOP_UP`, `WITHDRAWAL` or `TRANSFER` (needs `Idempotency-Key`) |
+| POST | `/api/users/{userId}/transactions/{id}/refund` | Receiver | Refund a transfer you received (needs `Idempotency-Key`) |
+| GET | `/api/users/{userId}/transactions` | Owner | History: filter by `accountId`, `type`, `status`, `from`, `to`, `minAmount`, `maxAmount`; paged, sortable |
+| GET | `/api/users/{userId}/transactions/{id}` | Sender or receiver | One transaction |
+| POST | `/api/admin/reconciliation/run` | Admin | Verify every balance against the ledger |
+| GET | `/api/admin/fraud-flags` | Admin | Flagged transactions |
+| POST | `/api/admin/fraud-flags/{id}/review` | Admin | Mark `CLEARED` or `CONFIRMED` |
+| POST | `/api/admin/accounts/{id}/freeze` / `unfreeze` | Admin | Stop a wallet sending and receiving |
+| POST | `/api/admin/users/{id}/disable` / `enable` | Admin | Lock a user out immediately |
+| GET | `/api/admin/audit-logs` | Admin | Audit trail, filterable |
+| GET | `/api/admin/outbox/stats` | Admin | Pending, published and failed events |
+| GET | `/actuator/health` | Public | Health check (includes the database) |
 
-## Concurrency testing
+Errors always have the same shape: `{timestamp, status, error, message, path, errors?}`, with 400 (validation), 401, 403, 404, 409 (conflict, frozen), 422 (insufficient balance, fraud block, idempotency key reuse) and 503 (lock contention, safe to retry).
 
-`ConcurrencyTest` runs against a real MySQL database with real threads, all released at the same instant.
+## How a transfer works
 
-| Test | Scenario | Result |
-|---|---|---|
-| Overdraft | 50 parallel withdrawals of 100 from a balance of 1,000 | Exactly 10 succeed, final balance 0.00 |
-| Idempotency | 20 threads send the same request with the same key | Money moves once (balance 900.00) |
-| Opposing transfers | 1,000 transfers A to B and B to A on 32 threads | 0 failures, 0 deadlocks, balances exact (about 69 transfers/second on a local machine) |
-| Reconciliation | `ReconciliationTest` corrupts one stored balance by 5.00 behind the ledger's back | The check reports that account with a difference of exactly 5.00 and the system as unhealthy |
-| Ledger integrity | 300 concurrent transfers | Ledger nets to zero and every balance equals the sum of its entries |
-Raw output from the runs is in [`docs/`](docs/). Run the tests yourself with a local MySQL database named `payledger_test`:
-
-```bash
-./mvnw test -Dtest=ConcurrencyTest
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant F as TransactionFacade
+    participant S as TransactionService (READ COMMITTED)
+    participant DB as MySQL
+    C->>F: POST /transactions (Idempotency-Key)
+    F->>S: createTransaction
+    S->>DB: key already used? -> replay
+    S->>DB: SELECT ... FOR UPDATE (lowest account id first)
+    S->>DB: key used while we waited? -> replay
+    S->>S: ownership, frozen, currency, fraud rules
+    S->>DB: update balances, insert transaction,<br/>2 ledger entries, fraud flags, audit row, outbox event
+    S-->>F: COMMIT (all or nothing)
+    F-->>C: 201 + transaction
+    Note over F: on UNIQUE violation (lost a key race):<br/>look up the winner in a new transaction and return it
 ```
-
-### Why it works
-
-- **Locking:** the original read, check, write sequence let two requests both pass the balance check. `FOR UPDATE` makes the second request wait and then see the updated balance.
-- **Lock ordering:** transfers always lock the lower account id first, so A to B and B to A can never each hold one lock and wait for the other.
-- **Idempotency:** `UNIQUE(user_id, idempotency_key)` lets the database decide the winner when identical requests race. The loser rolls back, including its balance changes, and its retry returns the stored result.
-
-More reasoning is in [DECISIONS.md](DECISIONS.md).
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    C[Client / Swagger UI] -->|HTTPS + JWT| F[JWT filter and security rules]
-    F --> CT[Controllers]
-    CT --> TS[TransactionService]
+    C[Client / Swagger UI] -->|HTTPS + JWT| SEC[JWT filter + method security]
+    SEC --> CT[Controllers]
+    CT --> TF[TransactionFacade]
+    TF --> TS[TransactionService]
+    TS --> FR[FraudService<br/>Strategy: rules]
+    TS --> AU[AuditService]
+    TS --> OB[OutboxService]
     CT --> AS[AccountService]
     CT --> RS[ReconciliationService]
-    J[Nightly reconciliation job] --> RS
-    TS --> R[(Repositories)]
-    AS --> R
-    RS --> R
-    R --> DB[(MySQL)]
+    J1[Nightly job] --> RS
+    J2[Outbox poller<br/>SKIP LOCKED] --> PUB[EventPublisher]
+    TS & AS & RS & FR & AU & OB --> DB[(MySQL<br/>Flyway schema)]
+    J2 --> DB
 ```
-
-A transfer runs in one database transaction: lock both accounts (lowest id first), check the balance, update both balances, store the transaction, and write the two ledger entries. Any failure rolls back everything.
 
 ## Data model
 
 ```mermaid
 erDiagram
     USERS ||--o{ ACCOUNTS : owns
-    ACCOUNTS ||--o{ TRANSACTIONS : "source or destination"
-    TRANSACTIONS ||--|{ LEDGER_ENTRIES : produces
-    ACCOUNTS ||--o{ LEDGER_ENTRIES : "debited or credited"
+    ACCOUNTS ||--o{ TRANSACTIONS : "source / destination"
+    TRANSACTIONS ||--|{ LEDGER_ENTRIES : "exactly 2"
+    ACCOUNTS ||--o{ LEDGER_ENTRIES : "debited / credited"
+    TRANSACTIONS ||--o| TRANSACTIONS : "refund_of"
+    TRANSACTIONS ||--o{ FRAUD_FLAGS : flagged
 
-    USERS {
-        bigint id PK
-        string name
+    USERS { bigint id PK
         string email UK
-        string password_hash
         string role
-    }
-    ACCOUNTS {
-        bigint id PK
+        string status }
+    ACCOUNTS { bigint id PK
         bigint user_id FK
-        string name
-        string type
-        decimal balance
         string currency
-        bigint version
-    }
-    TRANSACTIONS {
-        bigint id PK
+        decimal balance "CHECK >= 0"
+        string status "ACTIVE / FROZEN"
+        bigint version }
+    TRANSACTIONS { bigint id PK
         bigint user_id
-        string idempotency_key
-        string type
+        string idempotency_key "UK with user_id"
+        string type "TOP_UP / WITHDRAWAL / TRANSFER / REFUND"
+        string status "COMPLETED / REFUNDED"
         decimal amount
-        bigint source_account_id FK
-        bigint destination_account_id FK
-    }
-    LEDGER_ENTRIES {
-        bigint id PK
+        bigint refund_of_transaction_id UK }
+    LEDGER_ENTRIES { bigint id PK
         bigint transaction_id FK
-        bigint account_id FK
-        string direction
-        decimal amount
-    }
+        bigint account_id FK "null = external"
+        string direction "DEBIT / CREDIT"
+        decimal amount }
+    FRAUD_FLAGS { bigint id PK
+        bigint transaction_id FK
+        string rule_name
+        string status }
+    OUTBOX_EVENTS { bigint id PK
+        string event_type
+        text payload
+        string status
+        int attempts }
+    AUDIT_LOGS { bigint id PK
+        bigint actor_user_id
+        string action
+        string entity_type
+        string entity_id }
 ```
 
-`transactions` has a unique constraint on `(user_id, idempotency_key)`. A ledger entry with no account is the "external" side of an income or expense.
+## Proof: tests
+
+All tests run against a real MySQL with real threads released by a latch (`./mvnw test`).
+
+| Test | What it proves |
+|---|---|
+| `ConcurrencyTest` | 50 parallel withdrawals of 100 from 1,000: exactly 10 succeed. 20 parallel requests with one key: 1 transaction, all 20 callers get its id, 0 errors. 1,000 opposing transfers: 0 failures, 0 deadlocks, exact balances. |
+| `LedgerIntegrityTest` | 300 concurrent random transfers across 3 users: money conserved, every balance equals its ledger, every transaction nets to zero. Raw SQL `UPDATE`/`DELETE` on the ledger and a negative balance are rejected by the database. |
+| `FraudIntegrationTest` | 10 parallel 30k transfers against a 200k daily limit: exactly 6 succeed. Blocked attempts are audited despite the rollback. Large transfers are flagged. |
+| `RefundAndP2PTest` | Cross-user payments and refunds, 10 concurrent refunds of one transfer → exactly 1, frozen wallets, currency mismatch, key reuse, history filters. |
+| `OutboxTest` | Commit → exactly one event; rollback → none; a failing broker → backoff, then `FAILED`. |
+| `ReconciliationTest` | A balance corrupted with raw SQL is reported with the exact difference and raises an alert event. |
+| `ApiFlowTest` | Over HTTP: 401/403, tampered tokens, idempotent replay, field-level validation errors, admin freeze/disable/audit. |
+| `FraudRulesTest` | Each rule and the strategy runner in isolation (Mockito, no database). |
+
+### Pessimistic vs optimistic locking
+
+Same workload under each strategy (`LockingBenchmarkTest`, numbers from my machine):
+
+| Strategy | 50 × withdraw 100 from 1,000 | 1,000 opposing transfers (32 threads) |
+|---|---|---|
+| No locking (naive read-check-write) | **Broken**: all 50 "succeed" (5,000 paid out) yet the balance only fell to 800 | **Broken**: 157.00 destroyed, 435 deadlock failures |
+| Optimistic (`@Version`), no retry | Safe, but only 2 of 10 valid withdrawals served | Safe, but 945 of 1,000 rejected |
+| Optimistic + retry | Correct, 342 retries, 841 ms | 969 served, 31 gave up after 200 retries, **23,670 retries**, 17.1 s |
+| **Pessimistic (`FOR UPDATE`, ordered)** | Correct, 0 retries, 231 ms | **All 1,000 served, 0 retries, 8.8 s** |
+| Full production path (pessimistic + ledger, fraud rules, audit, outbox) | Correct, 1.4 s | All 1,000 served, 29.3 s |
+
+Under heavy contention on the same rows, optimistic locking either rejects most valid requests or burns time retrying; pessimistic locking queues them and serves every one. Optimistic would win on low-contention data. The full path is about 3× slower than bare locking because every transfer also writes two ledger entries, an audit row and an outbox event, and evaluates three fraud rules (here the rapid-transfer rule fires on almost every transfer and adds a flag too). Raw output: [`docs/locking-benchmark.md`](docs/locking-benchmark.md).
+
+Run it yourself: `./mvnw test -Dtest=LockingBenchmarkTest -Dsurefire.excludedGroups=`
 
 ## Run locally with Docker
 
 ```bash
-cp .env.example .env        # then set DB_PASSWORD and JWT_SECRET
+cp .env.example .env        # set DB_PASSWORD, JWT_SECRET (32+ chars), optionally ADMIN_EMAIL / ADMIN_PASSWORD
 docker compose up --build
 ```
 
-Open http://localhost:8080/swagger-ui/index.html
+Open http://localhost:8080/swagger-ui/index.html. If `ADMIN_EMAIL` and `ADMIN_PASSWORD` are set, that admin account is created on first start.
 
-`JWT_SECRET` must be at least 32 characters. Generate one with PowerShell:
+Generate a JWT secret with PowerShell:
 
 ```powershell
 $b = New-Object byte[] 48; [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($b); [Convert]::ToBase64String($b)
@@ -150,30 +192,35 @@ $b = New-Object byte[] 48; [Security.Cryptography.RandomNumberGenerator]::Create
 
 ## Run without Docker
 
-Requires Java 21 and MySQL. Create a database named `payledger`, then set these environment variables:
-
-```
-SPRING_DATASOURCE_PASSWORD=<your MySQL password>
-JWT_SECRET=<32+ character secret>
-```
+Requires Java 21 and MySQL 8. Set `SPRING_DATASOURCE_PASSWORD` and `JWT_SECRET`, then:
 
 ```bash
 ./mvnw spring-boot:run
 ```
 
-Optional: `SPRING_DATASOURCE_URL` and `SPRING_DATASOURCE_USERNAME` override the defaults (`jdbc:mysql://localhost:3306/payledger` and `root`).
+The `payledger` database is created if missing, and Flyway builds the schema.
+
+## Run the tests
+
+Tests use a local MySQL database `payledger_test` (created automatically; its schema is rebuilt on every run). Give them your MySQL password either as the environment variable `SPRING_DATASOURCE_PASSWORD`, or in a git-ignored file `test-db.properties` in the project root:
+
+```properties
+SPRING_DATASOURCE_PASSWORD=your-local-mysql-password
+```
+
+```bash
+./mvnw test
+```
 
 ## Tech stack
 
-Java 21, Spring Boot, Spring Security, Spring Data JPA (Hibernate), MySQL, JWT (jjwt), springdoc-openapi, JUnit 5, Maven, Docker, Railway.
+Java 21, Spring Boot 4, Spring Security, Spring Data JPA (Hibernate 7), MySQL 8, Flyway, JWT (jjwt), springdoc-openapi, JUnit 5, Mockito, AssertJ, Maven, Docker, GitHub Actions, Railway.
 
 ## Limitations
 
-- Transfers move money between a single user's own accounts (a personal wallet, not peer-to-peer payments between users).
-- The schema is created by Hibernate (`ddl-auto=update`) instead of versioned Flyway migrations.
-- Ledger immutability is enforced in the application (no setters, no update or delete repository methods); a database trigger or restricted permissions would be the production step.
-- Account creation accepts an initial balance for convenience, which is not production-grade.
+- Top-ups and withdrawals simulate the outside world (no real bank or card integration).
+- Refunds are full refunds of transfers only.
+- The event publisher logs events; a real deployment would plug in Kafka or a notification service.
+- Scheduled jobs assume a single instance (the outbox poller is already multi-instance safe; the nightly job would need ShedLock).
 
-## Roadmap
-
-Ledger integrity test under concurrent load, GitHub Actions CI, peer-to-peer transfers and refunds, audit log, fraud rules, account freezing, transactional outbox, and Flyway migrations.
+Design reasoning and trade-offs: **[DECISIONS.md](DECISIONS.md)**.

@@ -1,54 +1,30 @@
 package in.payledger.dto;
 
+import in.payledger.entity.Transaction;
+import in.payledger.entity.TransactionStatus;
 import in.payledger.entity.TransactionType;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
-public class TransactionResponse {
+public record TransactionResponse(
+        Long id,
+        TransactionType type,
+        TransactionStatus status,
+        Long sourceAccountId,
+        Long destinationAccountId,
+        BigDecimal amount,
+        String currency,
+        String category,
+        String description,
+        Long refundOfTransactionId,
+        LocalDateTime createdAt) {
 
-    private Long id;
-    private Long sourceAccountId;
-    private Long destinationAccountId;
-    private TransactionType type;
-    private BigDecimal amount;
-    private String category;
-    private String description;
-    private LocalDateTime createdAt;
-    private Long refundOfTransactionId;
-
-    public TransactionResponse() {
+    public static TransactionResponse from(Transaction t) {
+        return new TransactionResponse(
+                t.getId(), t.getType(), t.getStatus(),
+                t.getSourceAccountId(), t.getDestinationAccountId(),
+                t.getAmount(), t.getCurrency(), t.getCategory(), t.getDescription(),
+                t.getRefundOfTransactionId(), t.getCreatedAt());
     }
-
-    public TransactionResponse(
-            Long id,
-            Long sourceAccountId,
-            Long destinationAccountId,
-            TransactionType type,
-            BigDecimal amount,
-            String category,
-            String description,
-            LocalDateTime createdAt,
-            Long refundOfTransactionId) {
-
-        this.id = id;
-        this.sourceAccountId = sourceAccountId;
-        this.destinationAccountId = destinationAccountId;
-        this.type = type;
-        this.amount = amount;
-        this.category = category;
-        this.description = description;
-        this.createdAt = createdAt;
-        this.refundOfTransactionId = refundOfTransactionId;
-    }
-
-    public Long getId() { return id; }
-    public Long getSourceAccountId() { return sourceAccountId; }
-    public Long getDestinationAccountId() { return destinationAccountId; }
-    public TransactionType getType() { return type; }
-    public BigDecimal getAmount() { return amount; }
-    public String getCategory() { return category; }
-    public String getDescription() { return description; }
-    public LocalDateTime getCreatedAt() { return createdAt; }
-    public Long getRefundOfTransactionId() { return refundOfTransactionId; }
 }
