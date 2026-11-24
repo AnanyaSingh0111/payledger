@@ -38,12 +38,11 @@ class LedgerIntegrityTest {
 
     @Test
     void threeHundredConcurrentRandomTransfersKeepEveryBalanceEqualToItsLedger() throws Exception {
-        // five wallets across three users, so transfers cross user boundaries too
-        User u1 = data.user(), u2 = data.user(), u3 = data.user();
+        // five users, one INR wallet each
         List<Account> accounts = List.of(
-                data.fundedAccount(u1, "5000.00"), data.fundedAccount(u1, "5000.00"),
-                data.fundedAccount(u2, "5000.00"), data.fundedAccount(u2, "5000.00"),
-                data.fundedAccount(u3, "5000.00"));
+                data.fundedAccount(data.user(), "5000.00"), data.fundedAccount(data.user(), "5000.00"),
+                data.fundedAccount(data.user(), "5000.00"), data.fundedAccount(data.user(), "5000.00"),
+                data.fundedAccount(data.user(), "5000.00"));
         BigDecimal totalBefore = sumBalances(accounts);
 
         int tasks = 300;
@@ -94,7 +93,7 @@ class LedgerIntegrityTest {
     void everyTransactionWritesExactlyOneDebitAndOneCredit() {
         User u = data.user();
         Account a = data.fundedAccount(u, "100.00");
-        Account b = data.account(u);
+        Account b = data.account(data.user());
 
         TransactionResponse t = transactionService.createTransaction(u.getId(), TestData.key("t"),
                 CreateTransactionRequest.transfer(a.getId(), b.getId(), money("30.00")));

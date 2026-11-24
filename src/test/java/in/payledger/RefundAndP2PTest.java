@@ -202,7 +202,7 @@ class RefundAndP2PTest {
     void historyFiltersByTypeAndAmount() {
         User u = data.user();
         Account a = data.fundedAccount(u, "1000.00");
-        Account b = data.account(u);
+        Account b = data.account(data.user());
         pay(u, a, b, "5.00");
         pay(u, a, b, "500.00");
         transactionService.createTransaction(u.getId(), key("w"),

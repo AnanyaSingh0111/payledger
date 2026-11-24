@@ -1,9 +1,13 @@
 package in.payledger;
 
+import in.payledger.dto.CreateAccountRequest;
 import in.payledger.dto.CreateTransactionRequest;
 import in.payledger.dto.TransactionResponse;
 import in.payledger.entity.Account;
 import in.payledger.entity.User;
+import in.payledger.exception.ResourceAlreadyExistsException;
+import in.payledger.repository.AccountRepository;
+import in.payledger.service.AccountService;
 import in.payledger.service.TransactionFacade;
 import in.payledger.service.TransactionService;
 import in.payledger.support.IntegrationTest;
@@ -33,7 +37,40 @@ class ConcurrencyTest {
 
     @Autowired TransactionService transactionService;
     @Autowired TransactionFacade transactionFacade;
+    @Autowired AccountService accountService;
+    @Autowired AccountRepository accountRepository;
     @Autowired TestData data;
+
+    @Test
+    void tenParallelRequestsToOpenAnInrWalletCreateExactlyOne() throws Exception {
+        User user = data.user();
+
+        ExecutorService pool = Executors.newFixedThreadPool(10);
+        CountDownLatch start = new CountDownLatch(1);
+        AtomicInteger created = new AtomicInteger();
+        AtomicInteger refused = new AtomicInteger();
+        List<Future<?>> futures = new ArrayList<>();
+        for (int i = 0; i < 10; i++) {
+            futures.add(pool.submit(() -> {
+                start.await();
+                try {
+                    accountService.createAccount(user.getId(), CreateAccountRequest.of("INR"));
+                    created.incrementAndGet();
+                } catch (ResourceAlreadyExistsException e) {
+                    refused.incrementAndGet();   // "You already have a wallet in INR"
+                }
+                return null;
+            }));
+        }
+        start.countDown();
+        for (Future<?> f : futures) f.get();
+        pool.shutdown();
+
+        // the existence check alone would let several through; UNIQUE(user_id, currency) stops them
+        assertThat(created.get()).isEqualTo(1);
+        assertThat(refused.get()).isEqualTo(9);
+        assertThat(accountRepository.findByUserIdOrderByIdAsc(user.getId())).hasSize(1);
+    }
 
     @Test
     void parallelWithdrawalsNeverOverdrawAndExactlyTenSucceed() throws Exception {
@@ -114,9 +151,10 @@ class ConcurrencyTest {
 
     @Test
     void thousandOpposingTransfersKeepExactBalancesAndNeverDeadlock() throws Exception {
-        User user = data.user();
-        Account a = data.fundedAccount(user, "10000.00");
-        Account b = data.fundedAccount(user, "10000.00");
+        // one INR wallet per user, so the two wallets belong to two users
+        User userA = data.user(), userB = data.user();
+        Account a = data.fundedAccount(userA, "10000.00");
+        Account b = data.fundedAccount(userB, "10000.00");
 
         int tasks = 1000;
         ExecutorService pool = Executors.newFixedThreadPool(32);
@@ -132,8 +170,9 @@ class ConcurrencyTest {
                 // even tasks A -> B, odd tasks B -> A: the classic deadlock pattern
                 Long from = (n % 2 == 0) ? a.getId() : b.getId();
                 Long to = (n % 2 == 0) ? b.getId() : a.getId();
+                Long sender = (n % 2 == 0) ? userA.getId() : userB.getId();
                 try {
-                    transactionService.createTransaction(user.getId(), "xfer-" + n + "-" + a.getId(),
+                    transactionService.createTransaction(sender, "xfer-" + n + "-" + a.getId(),
                             CreateTransactionRequest.transfer(from, to, money("1.00")));
                     ok.incrementAndGet();
                 } catch (Exception e) {

@@ -119,9 +119,9 @@ class LockingBenchmarkTest {
 
     /** 1,000 transfers of 1.00, half A to B and half B to A, on 32 threads. */
     private Result opposingTransfers(Strategy s) throws Exception {
-        User u = data.user();
-        Account a = data.fundedAccount(u, "10000.00");
-        Account b = data.fundedAccount(u, "10000.00");
+        User userA = data.user(), userB = data.user();   // one INR wallet per user
+        Account a = data.fundedAccount(userA, "10000.00");
+        Account b = data.fundedAccount(userB, "10000.00");
         AtomicInteger ok = new AtomicInteger(), failed = new AtomicInteger();
         AtomicInteger retries = new AtomicInteger();
 
@@ -129,7 +129,7 @@ class LockingBenchmarkTest {
             long from = n % 2 == 0 ? a.getId() : b.getId();
             long to = n % 2 == 0 ? b.getId() : a.getId();
             if (s == Strategy.PRODUCTION_PATH) {
-                transactionService.createTransaction(u.getId(), TestData.key("b"),
+                transactionService.createTransaction(n % 2 == 0 ? userA.getId() : userB.getId(), TestData.key("b"),
                         CreateTransactionRequest.transfer(from, to, money("1.00")));
             } else {
                 transfer(s, from, to, money("1.00"), retries);

@@ -13,9 +13,10 @@ A wallet and payments REST API built around an **append-only double-entry ledger
 - **Transactional outbox** with a `SKIP LOCKED` poller, exponential backoff and a dead-letter state.
 - **Reconciliation** (nightly and on demand) that proves every balance equals its ledger total.
 - **Fraud rules (Strategy pattern)**: daily limit (blocks), rapid transfers and large amounts (flag for admin review).
+- **One wallet per user per currency**, enforced by `UNIQUE(user_id, currency)`, even under parallel requests.
 - **Admin tools**: review fraud flags, freeze wallets, disable users (tokens stop working at once), audit trail.
 - **Flyway** migrations with CHECK constraints and foreign keys; Hibernate only validates.
-- **38 tests** against a real MySQL: unit (Mockito), integration, concurrency and full HTTP flows. CI on GitHub Actions.
+- **40 tests** against a real MySQL: unit (Mockito), integration, concurrency and full HTTP flows. CI on GitHub Actions.
 
 ## Try it in 2 minutes
 
@@ -23,9 +24,9 @@ A wallet and payments REST API built around an **append-only double-entry ledger
 2. `POST /api/users`: register (name, email, password of 8+ characters).
 3. `POST /api/auth/login`: copy the `token` from the response.
 4. Click **Authorize**, paste the token (without "Bearer").
-5. `POST /api/users/{userId}/accounts`: open a wallet, e.g. `{"name":"Main","type":"WALLET","initialBalance":500}`.
+5. `POST /api/users/{userId}/accounts`: open your INR wallet, e.g. `{"currency":"INR","initialBalance":500}`. Each user has **one wallet per currency**, so register a second user to have someone to pay.
 6. `POST /api/users/{userId}/transactions` with header `Idempotency-Key: any-unique-string`:
-   `{"type":"TRANSFER","sourceAccountId":1,"destinationAccountId":2,"amount":25}` (the destination can be another user's wallet).
+   `{"type":"TRANSFER","sourceAccountId":1,"destinationAccountId":2,"amount":25}` (the destination is the other user's wallet).
 7. Send the same request again with the same key: same transaction back, money moved once.
 8. `GET /api/users/{userId}/accounts/{accountId}`: the balance plus the balance recomputed from the ledger.
 
@@ -37,7 +38,7 @@ A wallet and payments REST API built around an **append-only double-entry ledger
 | POST | `/api/auth/login` | Public | Log in, receive a JWT |
 | GET | `/api/users/{id}` | Owner or admin | Get a user |
 | GET | `/api/users` | Admin | List users (paged) |
-| POST | `/api/users/{userId}/accounts` | Owner | Open a wallet (any ISO currency, default INR) |
+| POST | `/api/users/{userId}/accounts` | Owner | Open a wallet: **one per currency** (any ISO code, default INR); a duplicate returns 409 |
 | GET | `/api/users/{userId}/accounts` | Owner | List wallets |
 | GET | `/api/users/{userId}/accounts/{accountId}` | Owner | Wallet + balance recomputed from the ledger |
 | GET | `/api/users/{userId}/accounts/{accountId}/statement` | Owner | Ledger entries (paged) |
@@ -112,7 +113,7 @@ erDiagram
         string status }
     ACCOUNTS { bigint id PK
         bigint user_id FK
-        string currency
+        string currency "UK with user_id: one wallet per currency"
         decimal balance "CHECK >= 0"
         string status "ACTIVE / FROZEN"
         bigint version }
@@ -152,7 +153,7 @@ All tests run against a real MySQL with real threads released by a latch (`./mvn
 
 | Test | What it proves |
 |---|---|
-| `ConcurrencyTest` | 50 parallel withdrawals of 100 from 1,000: exactly 10 succeed. 20 parallel requests with one key: 1 transaction, all 20 callers get its id, 0 errors. 1,000 opposing transfers: 0 failures, 0 deadlocks, exact balances. |
+| `ConcurrencyTest` | 50 parallel withdrawals of 100 from 1,000: exactly 10 succeed. 20 parallel requests with one key: 1 transaction, all 20 callers get its id, 0 errors. 1,000 opposing transfers: 0 failures, 0 deadlocks, exact balances. 10 parallel "open INR wallet" requests: exactly 1 wallet. |
 | `LedgerIntegrityTest` | 300 concurrent random transfers across 3 users: money conserved, every balance equals its ledger, every transaction nets to zero. Raw SQL `UPDATE`/`DELETE` on the ledger and a negative balance are rejected by the database. |
 | `FraudIntegrationTest` | 10 parallel 30k transfers against a 200k daily limit: exactly 6 succeed. Blocked attempts are audited despite the rollback. Large transfers are flagged. |
 | `RefundAndP2PTest` | Cross-user payments and refunds, 10 concurrent refunds of one transfer → exactly 1, frozen wallets, currency mismatch, key reuse, history filters. |

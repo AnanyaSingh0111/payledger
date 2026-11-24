@@ -29,7 +29,9 @@ public class AccountController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    @Operation(summary = "Open a wallet", description = "An initial balance is recorded in the ledger as a TOP_UP.")
+    @Operation(summary = "Open a wallet",
+            description = "One wallet per currency: a second wallet in the same currency returns 409. "
+                    + "{\"currency\":\"INR\"} is enough. An initial balance is recorded in the ledger as a TOP_UP.")
     public AccountResponse createAccount(@PathVariable Long userId, @Valid @RequestBody CreateAccountRequest request) {
         return accountService.createAccount(userId, request);
     }

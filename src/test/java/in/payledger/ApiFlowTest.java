@@ -136,7 +136,7 @@ class ApiFlowTest {
     @Test
     void badInputIsRejectedWithFieldErrors() throws Exception {
         long a = createAccount(alice, "Main", "100.00");
-        long b = createAccount(alice, "Savings", "0");
+        long b = createAccount(bob, "Main", "0");
 
         // 3 decimal places would be silently rounded by DECIMAL(19,2), so it is refused
         transfer(alice, "k1", a, b, "10.005")
@@ -157,6 +157,27 @@ class ApiFlowTest {
         transfer(alice, "k3", a, b, "1000.00")
                 .andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.message", containsString("Insufficient balance")));
+    }
+
+    @Test
+    void eachUserHasAtMostOneWalletPerCurrency() throws Exception {
+        createAccount(alice, "Main", "0");   // INR by default
+
+        // a second INR wallet is refused
+        mvc.perform(post("/api/users/{id}/accounts", alice.userId()).header("Authorization", alice.bearer())
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"currency\":\"INR\"}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message", containsString("wallet in INR")));
+
+        // a USD wallet is fine, and name/type are optional
+        mvc.perform(post("/api/users/{id}/accounts", alice.userId()).header("Authorization", alice.bearer())
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"currency\":\"USD\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.name").value("USD Wallet"))
+                .andExpect(jsonPath("$.type").value("WALLET"));
+
+        // another user can still have their own INR wallet
+        createAccount(bob, "Main", "0");
     }
 
     @Test

@@ -23,5 +23,6 @@ public interface AccountRepository extends JpaRepository<Account, Long> {
 
     List<Account> findByUserIdOrderByIdAsc(Long userId);
 
-    boolean existsByUserIdAndName(Long userId, String name);
+    /** A user has at most one wallet per currency (UNIQUE(user_id, currency) in the database). */
+    boolean existsByUserIdAndCurrency(Long userId, String currency);
 }

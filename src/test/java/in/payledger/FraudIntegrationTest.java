@@ -40,7 +40,7 @@ class FraudIntegrationTest {
     void largeTransfersSucceedButAreFlaggedForReview() {
         User u = data.user();
         Account a = data.fundedAccount(u, "80000.00");
-        Account b = data.account(u);
+        Account b = data.account(data.user());
 
         TransactionResponse t = transactionService.createTransaction(u.getId(), key("big"),
                 CreateTransactionRequest.transfer(a.getId(), b.getId(), money("60000.00")));
@@ -79,7 +79,7 @@ class FraudIntegrationTest {
     void dailyLimitHoldsUnderConcurrency() throws Exception {
         User u = data.user();
         Account a = data.fundedAccount(u, "500000.00");
-        Account b = data.account(u);
+        Account b = data.account(data.user());
 
         ExecutorService pool = Executors.newFixedThreadPool(10);
         CountDownLatch start = new CountDownLatch(1);

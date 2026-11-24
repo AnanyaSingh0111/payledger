@@ -114,6 +114,16 @@ Reconciliation wants the opposite: one consistent snapshot across several querie
 
 **Why:** locking, isolation levels, `SKIP LOCKED`, CHECK constraints and triggers behave differently (or do not exist) in an in-memory database. The bugs this project is about only show up on the real engine.
 
+## 16. One wallet per user per currency
+
+**Decision:** `UNIQUE(user_id, currency)` on `accounts` (migration `V2`). A second wallet in the same currency returns 409. Name and type are optional labels.
+
+**Why:** it matches how wallet products work (one INR balance, one USD balance), and it removes an ambiguity: "pay this user in INR" has exactly one destination. Transfers between two of your own same-currency wallets no longer exist, so every TRANSFER is a payment between users.
+
+**Concurrency:** the service checks first, for a clear message, but two parallel requests can both pass that check. The unique constraint picks one winner and the loser gets the same 409 (`ConcurrencyTest`: 10 parallel requests → exactly 1 wallet). Same pattern as idempotency (decision 3): an application check for a friendly error, a database constraint for the guarantee.
+
+**Migration:** a new `V2`, never an edit to `V1`. Flyway checksums applied migrations, so editing V1 would break every database that already ran it. V2 adds the new unique index before dropping the old `(user_id, name)` one, because MySQL needs an index on `user_id` for the foreign key at every moment. If existing data already has two same-currency wallets for one user, V2 fails on purpose: merging wallets would mean rewriting ledger history, which a human must decide.
+
 ## What I would do next
 
 - Testcontainers so tests start their own MySQL.

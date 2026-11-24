@@ -9,6 +9,7 @@ import in.payledger.dto.LedgerEntryResponse;
 import in.payledger.dto.PageResponse;
 import in.payledger.entity.Account;
 import in.payledger.entity.AccountStatus;
+import in.payledger.entity.AccountType;
 import in.payledger.entity.User;
 import in.payledger.exception.InvalidTransactionException;
 import in.payledger.exception.ResourceAlreadyExistsException;
@@ -18,6 +19,7 @@ import in.payledger.outbox.OutboxService;
 import in.payledger.repository.AccountRepository;
 import in.payledger.repository.LedgerEntryRepository;
 import in.payledger.repository.UserRepository;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
@@ -61,18 +63,27 @@ public class AccountService {
             throw new UserDisabledException("User account is disabled");
         }
 
-        String name = request.name().trim();
-        if (accountRepository.existsByUserIdAndName(userId, name)) {
-            throw new ResourceAlreadyExistsException("You already have an account named '" + name + "'");
+        // One wallet per user per currency. The check gives a clear message; the
+        // UNIQUE(user_id, currency) constraint decides if two requests race past it.
+        String currency = validCurrency(request.currency());
+        if (accountRepository.existsByUserIdAndCurrency(userId, currency)) {
+            throw new ResourceAlreadyExistsException("You already have a wallet in " + currency);
         }
 
         Account account = new Account();
         account.setUser(user);
-        account.setName(name);
-        account.setType(request.type());
-        account.setCurrency(validCurrency(request.currency()));
+        account.setName(request.name() == null || request.name().isBlank()
+                ? currency + " Wallet" : request.name().trim());
+        account.setType(request.type() != null ? request.type() : AccountType.WALLET);
+        account.setCurrency(currency);
         account.setBalance(BigDecimal.ZERO);   // money only ever enters through the ledger
-        Account saved = accountRepository.saveAndFlush(account);
+
+        Account saved;
+        try {
+            saved = accountRepository.saveAndFlush(account);
+        } catch (DataIntegrityViolationException e) {
+            throw new ResourceAlreadyExistsException("You already have a wallet in " + currency);
+        }
 
         auditService.record(userId, AuditAction.ACCOUNT_CREATED, "ACCOUNT", saved.getId(),
                 saved.getType() + " " + saved.getCurrency() + " '" + saved.getName() + "'");

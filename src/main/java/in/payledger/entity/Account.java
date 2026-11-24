@@ -5,8 +5,10 @@ import jakarta.persistence.*;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
+/** A wallet. Each user has at most one wallet per currency (UNIQUE(user_id, currency)). */
 @Entity
-@Table(name = "accounts")
+@Table(name = "accounts",
+        uniqueConstraints = @UniqueConstraint(name = "uk_accounts_user_currency", columnNames = {"user_id", "currency"}))
 public class Account {
 
     @Id
