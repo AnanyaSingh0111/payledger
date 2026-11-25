@@ -2,14 +2,14 @@
 
 **React frontend + Java/Spring Boot backend + MySQL.** A wallet and payments platform built around an **append-only double-entry ledger**. Users top up, withdraw, pay each other and refund payments, and the system stays correct under concurrent load: no overdrafts, no deadlocks, no double spending on retries, and every balance can be proven against the ledger.
 
-**Live API (Swagger UI):** https://payledger-production-24a2045d.up.railway.app/swagger-ui/index.html
+**Live app:** https://payledger-ananya.vercel.app · **Live API (Swagger UI):** https://payledger-production-24a2045d.up.railway.app/swagger-ui/index.html
 
 | Layer | Tech | Where |
 |---|---|---|
-| Frontend | React 19, React Router, Vite, hand-written canvas/CSS effects | [`frontend/`](frontend/) |
+| Frontend | React 19, React Router, Vite, hand-written CSS effects | [`frontend/`](frontend/) |
 | Backend | Java 21, Spring Boot 4, Spring Security (JWT), Spring Data JPA | [`src/`](src/) |
 | Database | MySQL 8, Flyway migrations (constraints + triggers) | [`src/main/resources/db/migration`](src/main/resources/db/migration) |
-| Ops | Docker, GitHub Actions, Railway | `Dockerfile`, `.github/` |
+| Ops | Docker, GitHub Actions, Vercel (frontend), Railway (API + MySQL) | `Dockerfile`, `.github/`, `frontend/vercel.json` |
 
 ## Highlights
 
