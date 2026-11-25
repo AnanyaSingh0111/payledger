@@ -1,0 +1,6 @@
+{
+  "rewrites": [
+    { "source": "/api/:path*", "destination": "https://payledger-production-24a2045d.up.railway.app/api/:path*" },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}

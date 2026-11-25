@@ -1,0 +1,4 @@
+# Netlify: forward API calls to the Spring Boot backend (same-origin for the browser, so no CORS),
+# and serve index.html for every client-side route.
+/api/*  https://payledger-production-24a2045d.up.railway.app/api/:splat  200
+/*      /index.html                                                      200

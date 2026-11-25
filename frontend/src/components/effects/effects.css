@@ -1,0 +1,70 @@
+/* ---------- background layers ---------- */
+.fx-layer { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 0; }
+
+/* Ruled ledger paper */
+.ruled {
+  background-image: linear-gradient(to bottom, var(--rule) 1px, transparent 1px);
+  background-size: 100% 34px;
+  mask-image: linear-gradient(to bottom, #000 40%, transparent);
+  -webkit-mask-image: linear-gradient(to bottom, #000 40%, transparent);
+}
+.ruled-margin { position: absolute; top: 0; bottom: 0; left: max(16px, calc(50% - 616px)); width: 1px; background: rgba(180, 35, 24, .18); box-shadow: 4px 0 0 rgba(180, 35, 24, .1); }
+@media (max-width: 700px) { .ruled-margin { left: 8px; } }
+
+/* Ledger scan (admin reconciliation) */
+.scan-box { position: relative; height: 190px; margin-top: 18px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-2); overflow: hidden; }
+.scan-hint { position: absolute; left: 0; right: 0; bottom: 14px; text-align: center; font-size: 13px; color: var(--muted); z-index: 1; }
+.ledger-scan { opacity: .9; }
+.ls-rows { position: absolute; inset: 16px 22px 44px; display: flex; flex-direction: column; justify-content: space-between; }
+.ls-row { display: flex; align-items: center; gap: 12px; height: 22px; border-bottom: 1px solid var(--border); }
+.ls-bar { height: 7px; border-radius: 4px; background: var(--bg-2); }
+.ls-tick { margin-left: auto; color: var(--green-500); font-weight: 800; font-size: 13px; opacity: 0;
+  animation: tick 5.6s calc(var(--i) * .8s) infinite; }
+.ls-line { position: absolute; left: 0; right: 0; height: 2px; background: var(--green-500); opacity: .5;
+  box-shadow: 0 0 0 6px rgba(19, 121, 90, .06); animation: scan 5.6s linear infinite; }
+.ledger-scan.active .ls-line { animation-duration: 1.4s; opacity: .9; }
+.ledger-scan.active .ls-tick { animation-duration: 1.4s; animation-delay: calc(var(--i) * .2s); }
+@keyframes scan { from { top: 10px; } to { top: calc(100% - 10px); } }
+@keyframes tick { 0%, 8% { opacity: 0; transform: scale(.6); } 14%, 80% { opacity: 1; transform: none; } 100% { opacity: 0; } }
+
+/* ---------- Spotlight card: a soft light that follows the pointer ---------- */
+.spotlight { position: relative; overflow: hidden; --x: 50%; --y: 50%; --spot: rgba(19, 121, 90, 0.07); transition: border-color .2s, box-shadow .2s; }
+.spotlight::before {
+  content: ""; position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity .3s;
+  background: radial-gradient(380px circle at var(--x) var(--y), var(--spot), transparent 65%);
+}
+.spotlight:hover { border-color: var(--border-strong); box-shadow: var(--shadow); }
+.spotlight:hover::before { opacity: 1; }
+.spotlight > * { position: relative; }
+
+/* ---------- Tilted card ---------- */
+.tilt { perspective: 1000px; }
+.tilt-inner { position: relative; transform-style: preserve-3d; border-radius: 16px; transition: transform .45s cubic-bezier(.2,.8,.2,1); will-change: transform; }
+.tilt.active .tilt-inner { transition: transform .08s linear; }
+.tilt-glare {
+  position: absolute; inset: 0; border-radius: inherit; pointer-events: none; opacity: 0; transition: opacity .3s;
+  background: radial-gradient(circle at var(--gx, 50%) var(--gy, 50%), rgba(255,255,255,.22), transparent 55%);
+}
+.tilt.active .tilt-glare { opacity: 1; }
+
+/* ---------- Warm tooltip (ink on paper) ---------- */
+.wt { position: relative; display: inline-flex; }
+.wt-bubble {
+  position: absolute; bottom: calc(100% + 9px); left: 50%; z-index: 60;
+  transform: translateX(-50%) translateY(4px); width: max-content; max-width: 290px;
+  padding: 9px 12px; border-radius: 9px; background: var(--ink); color: #ece9e1;
+  font: 500 12.5px/1.5 var(--font); letter-spacing: 0; text-transform: none; text-align: left;
+  box-shadow: 0 12px 28px -10px rgba(15, 31, 25, .5);
+  opacity: 0; visibility: hidden; pointer-events: none; transition: opacity .15s ease, transform .18s ease;
+}
+.wt-bubble b { color: #fff; }
+.wt-bubble::after { content: ""; position: absolute; top: 100%; left: 50%; transform: translateX(-50%); border: 6px solid transparent; border-top-color: var(--ink); }
+.wt.bottom .wt-bubble { bottom: auto; top: calc(100% + 9px); }
+.wt.bottom .wt-bubble::after { top: auto; bottom: 100%; border-top-color: transparent; border-bottom-color: var(--ink); }
+.wt:hover .wt-bubble, .wt:focus-within .wt-bubble { opacity: 1; visibility: visible; transform: translateX(-50%) translateY(0); }
+.wt.end .wt-bubble { left: auto; right: -4px; transform: translateY(4px); }
+.wt.end .wt-bubble::after { left: auto; right: 12px; transform: none; }
+.wt.end:hover .wt-bubble, .wt.end:focus-within .wt-bubble { transform: translateY(0); }
+
+/* ---------- Count up ---------- */
+.countup { font-variant-numeric: tabular-nums; }
