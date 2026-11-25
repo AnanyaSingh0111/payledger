@@ -1,8 +1,15 @@
-# PayLedger
+# PayLedger: Full-Stack Financial Ledger Platform
 
-A wallet and payments REST API built around an **append-only double-entry ledger**, with **Java 21, Spring Boot, MySQL and JWT**. Users top up, withdraw, pay each other and refund payments, and the system stays correct under concurrent load: no overdrafts, no deadlocks, no double spending on retries, and every balance can be proven against the ledger.
+**React frontend + Java/Spring Boot backend + MySQL.** A wallet and payments platform built around an **append-only double-entry ledger**. Users top up, withdraw, pay each other and refund payments, and the system stays correct under concurrent load: no overdrafts, no deadlocks, no double spending on retries, and every balance can be proven against the ledger.
 
 **Live API (Swagger UI):** https://payledger-production-24a2045d.up.railway.app/swagger-ui/index.html
+
+| Layer | Tech | Where |
+|---|---|---|
+| Frontend | React 19, React Router, Vite, hand-written canvas/CSS effects | [`frontend/`](frontend/) |
+| Backend | Java 21, Spring Boot 4, Spring Security (JWT), Spring Data JPA | [`src/`](src/) |
+| Database | MySQL 8, Flyway migrations (constraints + triggers) | [`src/main/resources/db/migration`](src/main/resources/db/migration) |
+| Ops | Docker, GitHub Actions, Railway | `Dockerfile`, `.github/` |
 
 ## Highlights
 
@@ -29,6 +36,24 @@ A wallet and payments REST API built around an **append-only double-entry ledger
    `{"type":"TRANSFER","sourceAccountId":1,"destinationAccountId":2,"amount":25}` (the destination is the other user's wallet).
 7. Send the same request again with the same key: same transaction back, money moved once.
 8. `GET /api/users/{userId}/accounts/{accountId}`: the balance plus the balance recomputed from the ledger.
+
+## Frontend (React)
+
+A dark fintech UI on top of the same API, with no backend changes. Its dev server and hosting proxy `/api`, so the browser never makes a cross-origin call.
+
+- **Landing:** a live ledger card that posts sample transactions entry by entry, count-up stats from the real test results, and the 8 steps of a payment.
+- **Overview and wallets:** wallet cards coloured per currency, one wallet per currency, a ledger statement and a live **"balance matches ledger"** check per wallet.
+- **Move money:** top-up, withdraw and P2P transfer. The browser generates the **Idempotency-Key**, shows it, reuses it on retry, and a **Replay** button proves the same request returns the same transaction.
+- **History:** filters, sorting, paging, and refunds of transfers you received.
+- **Admin console:** reconciliation with a scanning animation, outbox stats, fraud-flag review, freeze/unfreeze wallets, disable users, the audit log.
+
+```bash
+cd frontend
+npm install
+npm run dev        # http://localhost:5173, proxies /api to the live API by default
+```
+
+Details, deployment (Vercel/Netlify) and design notes: [frontend/README.md](frontend/README.md).
 
 ## API
 
@@ -217,7 +242,7 @@ SPRING_DATASOURCE_PASSWORD=your-local-mysql-password
 
 ## Tech stack
 
-Java 21, Spring Boot 4, Spring Security, Spring Data JPA (Hibernate 7), MySQL 8, Flyway, JWT (jjwt), springdoc-openapi, JUnit 5, Mockito, AssertJ, Maven, Docker, GitHub Actions, Railway.
+React 19, Vite, React Router (frontend) · Java 21, Spring Boot 4, Spring Security, Spring Data JPA (Hibernate 7), MySQL 8, Flyway, JWT (jjwt), springdoc-openapi, JUnit 5, Mockito, AssertJ, Maven, Docker, GitHub Actions, Railway.
 
 ## Limitations
 
