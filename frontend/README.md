@@ -14,7 +14,7 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:5173. By default `/api` calls are forwarded to the **live Railway API**, so you don't need a local backend. To use a local backend instead:
+Open http://localhost:5173. By default `/api` calls are forwarded to the **live API on Oracle Cloud**, so you don't need a local backend. To use a local backend instead:
 
 ```bash
 # PowerShell
@@ -39,7 +39,7 @@ Same-origin for the browser means no CORS, and the backend stays exactly as it i
 
 1. Import the repository in Vercel and set **Root Directory** to `frontend`.
 2. Framework preset: Vite (build `npm run build`, output `dist`).
-3. Deploy. `vercel.json` proxies `/api/*` to the Railway backend and serves `index.html` for client-side routes.
+3. Deploy. `vercel.json` proxies `/api/*` to the Oracle Cloud backend and serves `index.html` for client-side routes.
 
 ## Pages
 

@@ -9,7 +9,7 @@ import { Brand } from '../components/ui/Logo'
 import { money } from '../lib/format'
 import './landing.css'
 
-const API_DOCS = 'https://payledger-production-24a2045d.up.railway.app/swagger-ui/index.html'
+const API_DOCS = 'https://80-225-247-125.sslip.io/swagger-ui/index.html'
 const REPO = 'https://github.com/AnanyaSingh0111/payledger'
 
 const STATS = [

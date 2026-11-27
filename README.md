@@ -2,14 +2,14 @@
 
 **React frontend + Java/Spring Boot backend + MySQL.** A wallet and payments platform built around an **append-only double-entry ledger**. Users top up, withdraw, pay each other and refund payments, and the system stays correct under concurrent load: no overdrafts, no deadlocks, no double spending on retries, and every balance can be proven against the ledger.
 
-**Live app:** https://payledger-ananya.vercel.app · **Live API (Swagger UI):** https://payledger-production-24a2045d.up.railway.app/swagger-ui/index.html
+**Live app:** https://payledger-ananya.vercel.app · **Live API (Swagger UI):** https://80-225-247-125.sslip.io/swagger-ui/index.html
 
 | Layer | Tech | Where |
 |---|---|---|
 | Frontend | React 19, React Router, Vite, hand-written CSS effects | [`frontend/`](frontend/) |
 | Backend | Java 21, Spring Boot 4, Spring Security (JWT), Spring Data JPA | [`src/`](src/) |
 | Database | MySQL 8, Flyway migrations (constraints + triggers) | [`src/main/resources/db/migration`](src/main/resources/db/migration) |
-| Ops | Docker, GitHub Actions, Vercel (frontend), Railway (API + MySQL) | `Dockerfile`, `.github/`, `frontend/vercel.json` |
+| Ops | Docker Compose, GitHub Actions, Vercel (frontend), Oracle Cloud ARM VM + Caddy HTTPS (API + MySQL) | `Dockerfile`, `.github/`, `frontend/vercel.json` |
 
 ## Highlights
 
@@ -218,6 +218,16 @@ Generate a JWT secret with PowerShell:
 $b = New-Object byte[] 48; [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($b); [Convert]::ToBase64String($b)
 ```
 
+## Deployment
+
+| Part | Where | How |
+|---|---|---|
+| React frontend | Vercel | Root directory `frontend`, redeployed on every push. `vercel.json` forwards `/api/*` to the backend, so the browser stays same-origin (no CORS). |
+| Spring Boot API + MySQL | Oracle Cloud Always Free ARM VM (Ubuntu 24.04, 1 OCPU, 6 GB) | The same `docker compose up -d --build` as above. Both containers restart automatically after a crash or reboot, so the outbox poller and the nightly reconciliation run 24/7. |
+| HTTPS | Caddy on the VM | `caddy reverse-proxy` terminates TLS with an automatic Let's Encrypt certificate and forwards to port 8080. |
+
+Updating the backend: `git pull && sudo docker compose up -d --build` on the VM. The MySQL volume keeps the data.
+
 ## Run without Docker
 
 Requires Java 21 and MySQL 8. Set `SPRING_DATASOURCE_PASSWORD` and `JWT_SECRET`, then:
@@ -242,7 +252,7 @@ SPRING_DATASOURCE_PASSWORD=your-local-mysql-password
 
 ## Tech stack
 
-React 19, Vite, React Router (frontend) · Java 21, Spring Boot 4, Spring Security, Spring Data JPA (Hibernate 7), MySQL 8, Flyway, JWT (jjwt), springdoc-openapi, JUnit 5, Mockito, AssertJ, Maven, Docker, GitHub Actions, Railway.
+React 19, Vite, React Router (frontend) · Java 21, Spring Boot 4, Spring Security, Spring Data JPA (Hibernate 7), MySQL 8, Flyway, JWT (jjwt), springdoc-openapi, JUnit 5, Mockito, AssertJ, Maven, Docker, GitHub Actions, Vercel, Oracle Cloud, Caddy.
 
 ## Limitations
 
